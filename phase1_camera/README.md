@@ -62,6 +62,9 @@ If VLC works but Python does not, it is a decoder/backend issue, not the camera.
 ## 6. Run
 
 ```bash
+python -m phase1_camera.probe            # find the right RTSP path if 101/102 fail
+```
+```bash
 python -m phase1_camera.test_rtsp        # minimal smoke test
 ```
 ```bash
@@ -108,6 +111,7 @@ once the stream has been up. The **initial** connect is bounded by `STARTUP_MAX_
 | RTSP port closed | RTSP enabled on DVR? correct port? firewall? |
 | VLC fails too | URL, credentials, channel id |
 | VLC works, Python fails | decoder / FFmpeg backend / H.265 support — try a sub stream / H.264 |
+| `method OPTIONS failed: 404` | wrong RTSP path/channel — run `python -m phase1_camera.probe` to find the right one |
 | Video freezes | network bandwidth, bitrate, decoder load — try sub stream |
 | Auth fails | credentials; URL-encode special characters (handled automatically here) |
 | High CPU | use the sub stream; H.264 over H.265 for now |
