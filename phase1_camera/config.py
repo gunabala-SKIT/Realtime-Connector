@@ -43,6 +43,22 @@ def _get_float(name: str, default: float) -> float:
         return default
 
 
+def _parse_opt_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+# libav log levels accepted by OPENCV_FFMPEG_LOGLEVEL (name -> numeric)
+_FFMPEG_LOGLEVELS = {
+    "quiet": "-8", "panic": "0", "fatal": "8", "error": "16",
+    "warning": "24", "info": "32", "verbose": "40", "debug": "48",
+}
+
+
 @dataclass
 class Config:
     camera_ip: str
@@ -60,6 +76,8 @@ class Config:
     reconnect_max_attempts: int
     startup_max_attempts: int
     target_fps: float
+    capture_buffer: int | None
+    ffmpeg_loglevel: str | None
     log_level: str
     log_dir: Path
 
@@ -91,6 +109,8 @@ class Config:
             reconnect_max_attempts=_get_int("RECONNECT_MAX_ATTEMPTS", 0),
             startup_max_attempts=max(1, _get_int("STARTUP_MAX_ATTEMPTS", 3)),
             target_fps=_get_float("TARGET_FPS", 0.0),
+            capture_buffer=_parse_opt_int(_get("CAPTURE_BUFFER")),
+            ffmpeg_loglevel=_get("FFMPEG_LOGLEVEL"),
             log_level=(_get("LOG_LEVEL", "INFO") or "INFO").upper(),
             log_dir=log_dir,
         )
@@ -133,4 +153,19 @@ class Config:
         # socket I/O timeout in microseconds. FFmpeg >= 5 uses "timeout"; older builds
         # used "stimeout". OpenCV's bundled FFmpeg is recent, so "timeout" is correct here.
         timeout_us = max(self.open_timeout_ms, 1000) * 1000
-        return f"rtsp_transport;{self.rtsp_transport}|timeout;{timeout_us}"
+        opts = [
+            f"rtsp_transport;{self.rtsp_transport}",
+            f"timeout;{timeout_us}",
+            "max_delay;500000",          # 0.5s reorder window - tolerates jitter
+            "rtsp_flags;prefer_tcp",
+        ]
+        return "|".join(opts)
+
+    def opencv_ffmpeg_loglevel(self) -> str | None:
+        """Numeric level for OPENCV_FFMPEG_LOGLEVEL, or None to leave libav's default."""
+        if not self.ffmpeg_loglevel:
+            return None
+        v = self.ffmpeg_loglevel.strip().lower()
+        if v in _FFMPEG_LOGLEVELS:
+            return _FFMPEG_LOGLEVELS[v]
+        return v if v.lstrip("-").isdigit() else None

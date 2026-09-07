@@ -69,6 +69,9 @@ class CameraStream:
     def connect(self) -> bool:
         if self.cfg.uses_rtsp:
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = self.cfg.ffmpeg_capture_options()
+            level = self.cfg.opencv_ffmpeg_loglevel()
+            if level is not None:
+                os.environ["OPENCV_FFMPEG_LOGLEVEL"] = level
 
         self.metrics.connection_attempts += 1
         source = self.cfg.opencv_source()
@@ -81,10 +84,13 @@ class CameraStream:
             cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG, params)
         else:
             cap = cv2.VideoCapture(source)
-        try:
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # keep latency low; ignored by some backends
-        except cv2.error:
-            pass
+        if self.cfg.capture_buffer is not None:
+            # Only set when asked: forcing a 1-frame buffer lowers latency but makes
+            # a lossy RTSP stream decode worse (dropped frames break the reference chain).
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, self.cfg.capture_buffer)
+            except cv2.error:
+                pass
 
         if not cap.isOpened():
             cap.release()
