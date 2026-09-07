@@ -1,0 +1,26 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Secrets & runtime output
+phase1_camera/.env
+.env
+*.log
+phase1_camera/logs/
+logs/
+snapshots/
+scratch/
+*.jpg
+*.png
+*.mp4
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
