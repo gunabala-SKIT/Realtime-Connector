@@ -101,13 +101,36 @@ class CameraStream:
             )
             return False
 
-        self.cap = cap
-        self._width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self._height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self._reported_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+
+        # Warm-up: pull frames for a few seconds until one decodes. Many RTSP streams
+        # report 0x0 until the first keyframe arrives. If nothing decodes, the stream
+        # opened but has no usable video (bad codec / missing SPS-PPS / dead channel).
+        warmup_deadline = time.time() + max(self.cfg.open_timeout_ms / 1000.0, 5.0)
+        first = None
+        while time.time() < warmup_deadline and not self._stopped:
+            ok, frame = cap.read()
+            if ok and frame is not None and self._valid_frame(frame):
+                first = frame
+                break
+            time.sleep(0.02)
+        if first is None:
+            cap.release()
+            self.cap = None
+            self.log.error(
+                "Stream opened but delivered no decodable video within warm-up. "
+                "Likely a broken bitstream from the DVR (missing SPS/PPS, corrupt keyframes) "
+                "or an empty channel. Try: set the DVR stream to H.264, shorten the I-frame "
+                "interval, reboot the DVR, or verify the channel has a live camera."
+            )
+            return False
+
+        self.cap = cap
+        self._height, self._width = first.shape[:2]
         self.metrics.connected_since = time.time()
         self.metrics.last_frame_time = None
         self._consecutive_failures = 0
+        self.metrics.note_frame()
         self.log.info(
             "Stream opened. resolution=%dx%d reported_fps=%.1f transport=%s",
             self._width,

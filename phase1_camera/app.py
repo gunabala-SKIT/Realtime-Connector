@@ -74,8 +74,17 @@ def main(argv=None) -> int:
         return 1
 
     window = "Reality Connector - Phase 1 (Hikvision)"
-    if not args.no_display:
-        cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+    display = not args.no_display
+    if display:
+        try:
+            cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+        except cv2.error:
+            log.warning(
+                "OpenCV has no GUI support (headless build, or the venv is not active) - "
+                "running without a window. Install 'opencv-python' (not '-headless') in an "
+                "activated venv, or use --snapshot / --no-display."
+            )
+            display = False
 
     start = time.time()
     last_metrics = 0.0
@@ -109,7 +118,7 @@ def main(argv=None) -> int:
                 log.info("metrics %s", status)
                 last_metrics = now
 
-            if not args.no_display:
+            if display:
                 _draw_overlay(frame, status)
                 cv2.imshow(window, frame)
                 key = cv2.waitKey(1) & 0xFF
@@ -134,7 +143,7 @@ def main(argv=None) -> int:
     finally:
         final_status = cam.get_status()
         cam.release()
-        if not args.no_display:
+        if display:
             cv2.destroyAllWindows()
         log.info("Final status: %s", final_status)
 
