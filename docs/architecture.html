@@ -1,0 +1,542 @@
+<title>Reality Connector Production Architecture</title>
+<meta name="description" content="How a camera frame becomes a tracked identity, a structured event, and an alert in the production Reality Connector platform.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --ground: #f4f6f8;
+    --ground-2: #eceff3;
+    --surface: #ffffff;
+    --ink: #1a222c;
+    --muted: #5c6975;
+    --hairline: #d5dbe1;
+    --accent: #0e7c86;          /* the live data path */
+    --accent-soft: #d7ebed;
+    --good: #1f8f52;            /* RECOGNIZED */
+    --warn: #b5790d;            /* UNVERIFIED */
+    --crit: #cf3b3b;            /* UNKNOWN / ALERT */
+    --shadow: 0 1px 2px rgba(20,30,45,.06), 0 8px 24px rgba(20,30,45,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1319;
+      --ground-2: #151c25;
+      --surface: #182029;
+      --ink: #e4e9ef;
+      --muted: #94a2b0;
+      --hairline: #2a333e;
+      --accent: #3ccfd7;
+      --accent-soft: #123840;
+      --good: #43c47e;
+      --warn: #e0aa42;
+      --crit: #ef6060;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1319;
+    --ground-2: #151c25;
+    --surface: #182029;
+    --ink: #e4e9ef;
+    --muted: #94a2b0;
+    --hairline: #2a333e;
+    --accent: #3ccfd7;
+    --accent-soft: #123840;
+    --good: #43c47e;
+    --warn: #e0aa42;
+    --crit: #ef6060;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 64px 28px 96px; }
+  .col { max-width: 68ch; }
+
+  header { border-bottom: 1px solid var(--hairline); padding-bottom: 36px; margin-bottom: 48px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-weight: 600; font-size: clamp(2rem, 4.5vw, 2.7rem); line-height: 1.12;
+    letter-spacing: -.02em; text-wrap: balance; margin: 0 0 18px;
+  }
+  .lede { font-size: 1.075rem; color: var(--muted); margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  section { margin-top: 72px; }
+  h2 {
+    font-weight: 600; font-size: 1.45rem; letter-spacing: -.01em;
+    margin: 0 0 8px; text-wrap: balance;
+  }
+  h2 + .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 24px;
+  }
+  h3 { font-weight: 600; font-size: 1.05rem; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  a { color: var(--accent); }
+
+  figure {
+    margin: 28px 0 8px; padding: 24px;
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px;
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  figure svg { display: block; width: 100%; height: auto; min-width: 640px; color: var(--ink); }
+  figcaption {
+    margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--hairline);
+    font-size: .85rem; color: var(--muted);
+  }
+
+  /* ---- shared SVG vocabulary, themed from page tokens ---- */
+  .dia .node { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+  .dia .zone { fill: var(--ground-2); stroke: var(--hairline); stroke-width: 1.25; }
+  .dia .store { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+  .dia .t   { fill: var(--ink); font-family: "IBM Plex Sans", sans-serif; font-size: 13px; font-weight: 500; }
+  .dia .t.sm { font-size: 11.5px; font-weight: 400; }
+  .dia .lbl { fill: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; }
+  .dia .zlbl { fill: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .dia .edge { stroke: var(--ink); stroke-width: 1.4; fill: none; }
+  .dia .edge.flow { stroke: var(--accent); stroke-width: 2.2; }
+  .dia .edge.dash { stroke-dasharray: 4 4; stroke: var(--muted); stroke-width: 1.2; }
+  .dia marker#ah path  { fill: var(--ink); }
+  .dia marker#af path  { fill: var(--accent); }
+  .dia marker#am path  { fill: var(--muted); }
+  .dia .n-rec { stroke: var(--good); }
+  .dia .n-unv { stroke: var(--warn); }
+  .dia .n-unk { stroke: var(--crit); }
+  .dia .x-rec { fill: var(--good); font-weight: 600; }
+  .dia .x-unv { fill: var(--warn); font-weight: 600; }
+  .dia .x-unk { fill: var(--crit); font-weight: 600; }
+  .dia .edge.crit { stroke: var(--crit); stroke-width: 1.8; }
+  .dia marker#ac path { fill: var(--crit); }
+
+  ol.flow-list { counter-reset: step; list-style: none; padding: 0; margin: 20px 0 0; }
+  ol.flow-list li {
+    position: relative; padding: 12px 0 12px 92px; border-top: 1px solid var(--hairline);
+  }
+  ol.flow-list li:last-child { border-bottom: 1px solid var(--hairline); }
+  ol.flow-list li .tick {
+    position: absolute; left: 0; top: 12px;
+    font-family: "IBM Plex Mono", monospace; font-size: .8rem; color: var(--accent);
+  }
+  ol.flow-list li b { font-weight: 600; }
+  .state { font-family: "IBM Plex Mono", monospace; font-size: .82rem; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+  .state.rec { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .state.unv { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+  .state.unk { color: var(--crit); background: color-mix(in srgb, var(--crit) 15%, transparent); }
+
+  .tablewrap { overflow-x: auto; margin-top: 20px; border: 1px solid var(--hairline); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: .9rem; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  th {
+    font-family: "IBM Plex Mono", monospace; font-size: .72rem; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); background: var(--ground-2);
+  }
+  tr:last-child td { border-bottom: 0; }
+  td code, p code, li code {
+    font-family: "IBM Plex Mono", monospace; font-size: .85em;
+    background: var(--ground-2); padding: 1px 5px; border-radius: 4px;
+  }
+  .tag {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: .7rem;
+    padding: 2px 7px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--muted);
+  }
+  footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); font-size: .85rem; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) { a { transition: color .15s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Reality Connector · target design</p>
+    <h1>Production Architecture &amp; Data Flow</h1>
+    <p class="lede col">
+      This is the architecture the phased build converges on. It traces one path end to end:
+      a <strong>camera frame</strong> is decoded, sampled, and run through the AI worker; a person becomes a
+      <strong>track</strong>, a face becomes a <strong>512-dimension embedding</strong>, the embedding resolves to a
+      <strong>business identity</strong>, the identity produces a <strong>structured event</strong>, and a matching rule
+      raises an <strong>alert</strong> that reaches an operator in near-real time. Storage, deployment, and the
+      MVP-to-production path follow.
+    </p>
+  </header>
+
+  <!-- ============================================ SECTION 1 -->
+  <section>
+    <h2>The production flow</h2>
+    <p class="kicker">camera → ingestion → AI worker → identity &amp; events → rules → alerting → application</p>
+    <p class="col">
+      Each tier is an independently scalable service. Video ingestion, AI inference, and event processing are
+      separated deliberately so the platform can grow from one camera to many by adding workers to a single
+      tier rather than rebuilding. The teal path is live video-derived data moving forward; dashed grey lines
+      are reads and writes against shared stores.
+    </p>
+
+    <figure>
+      <svg class="dia" viewBox="0 0 1120 860" role="img"
+           aria-label="Layered production data flow from Hikvision cameras through RTSP ingestion, the GPU AI inference worker, the identity and event engine, the rule engine, alerting, and the FastAPI application and React dashboard, with PostgreSQL plus pgvector, Redis, and object storage as shared stores.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+          <marker id="af" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+          <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+        </defs>
+
+        <!-- store rail -->
+        <text class="zlbl" x="900" y="30">shared stores</text>
+        <rect class="store" x="900" y="46"  width="196" height="50" rx="6"/>
+        <text class="t sm" x="998" y="69" text-anchor="middle">PostgreSQL</text>
+        <text class="lbl"  x="998" y="85" text-anchor="middle">+ pgvector</text>
+        <rect class="store" x="900" y="256" width="196" height="46" rx="6"/>
+        <text class="t sm" x="998" y="284" text-anchor="middle">Redis</text>
+        <rect class="store" x="900" y="428" width="196" height="54" rx="6"/>
+        <text class="t sm" x="998" y="451" text-anchor="middle">Object store</text>
+        <text class="lbl"  x="998" y="467" text-anchor="middle">snapshots · clips</text>
+        <rect class="store" x="900" y="660" width="196" height="46" rx="6"/>
+        <text class="t sm" x="998" y="688" text-anchor="middle">Audit log</text>
+
+        <!-- TIER 1 capture -->
+        <text class="zlbl" x="24" y="30">capture</text>
+        <rect class="node" x="24"  y="44" width="200" height="52" rx="6"/>
+        <text class="t" x="124" y="75" text-anchor="middle">Hikvision cameras</text>
+        <rect class="node" x="300" y="44" width="200" height="52" rx="6"/>
+        <text class="t" x="400" y="69" text-anchor="middle">DVR / NVR</text>
+        <text class="lbl" x="400" y="85" text-anchor="middle">aggregates channels</text>
+        <line class="edge" x1="224" y1="70" x2="296" y2="70" marker-end="url(#ah)"/>
+
+        <!-- TIER 2 ingestion -->
+        <text class="zlbl" x="24" y="138">ingestion service · per camera</text>
+        <rect class="node" x="24"  y="152" width="220" height="52" rx="6"/>
+        <text class="t" x="134" y="176" text-anchor="middle">RTSP decoder</text>
+        <text class="lbl" x="134" y="192" text-anchor="middle">OpenCV / FFmpeg</text>
+        <rect class="node" x="320" y="152" width="180" height="52" rx="6"/>
+        <text class="t" x="410" y="176" text-anchor="middle">Frame sampler</text>
+        <text class="lbl" x="410" y="192" text-anchor="middle">drop to ~10 fps</text>
+        <path class="edge flow" d="M360 96 L206 148" marker-end="url(#af)"/>
+        <text class="lbl" x="286" y="112">RTSP / TCP · H.264</text>
+        <line class="edge flow" x1="244" y1="178" x2="316" y2="178" marker-end="url(#af)"/>
+
+        <!-- TIER 3 AI worker -->
+        <text class="zlbl" x="24" y="248">AI inference worker · GPU</text>
+        <rect class="zone" x="24" y="262" width="744" height="72" rx="8"/>
+        <rect class="node" x="40"  y="278" width="122" height="40" rx="5"/><text class="t sm" x="101" y="302" text-anchor="middle">YOLO detect</text>
+        <rect class="node" x="178" y="278" width="132" height="40" rx="5"/><text class="t sm" x="244" y="302" text-anchor="middle">BoT-SORT track</text>
+        <rect class="node" x="326" y="278" width="116" height="40" rx="5"/><text class="t sm" x="384" y="302" text-anchor="middle">SCRFD face</text>
+        <rect class="node" x="458" y="278" width="116" height="40" rx="5"/><text class="t sm" x="516" y="302" text-anchor="middle">quality gate</text>
+        <rect class="node" x="590" y="278" width="160" height="40" rx="5"/><text class="t sm" x="670" y="302" text-anchor="middle">ArcFace embed</text>
+        <line class="edge flow" x1="410" y1="204" x2="410" y2="258" marker-end="url(#af)"/>
+        <text class="lbl" x="422" y="230">sampled frames · ~10 fps</text>
+
+        <!-- TIER 4 identity & events -->
+        <text class="zlbl" x="24" y="358">identity &amp; event engine</text>
+        <rect class="node" x="24"  y="372" width="200" height="52" rx="6"/>
+        <text class="t" x="124" y="396" text-anchor="middle">Embedding match</text>
+        <text class="lbl" x="124" y="412" text-anchor="middle">k-NN · pgvector</text>
+        <rect class="node" x="280" y="372" width="180" height="52" rx="6"/>
+        <text class="t" x="370" y="396" text-anchor="middle">Identity decision</text>
+        <text class="lbl" x="370" y="412" text-anchor="middle">rec / unk / unverified</text>
+        <rect class="node" x="516" y="372" width="200" height="52" rx="6"/>
+        <text class="t" x="616" y="396" text-anchor="middle">Event builder</text>
+        <text class="lbl" x="616" y="412" text-anchor="middle">+ deduplication</text>
+        <path class="edge flow" d="M300 334 L214 368" marker-end="url(#af)"/>
+        <text class="lbl" x="300" y="346">tracks + embeddings</text>
+        <line class="edge flow" x1="224" y1="398" x2="276" y2="398" marker-end="url(#af)"/>
+        <line class="edge flow" x1="460" y1="398" x2="512" y2="398" marker-end="url(#af)"/>
+
+        <!-- TIER 5 rules -->
+        <text class="zlbl" x="24" y="460">rule engine</text>
+        <rect class="node" x="24" y="474" width="320" height="52" rx="6"/>
+        <text class="t" x="184" y="498" text-anchor="middle">Rule evaluation</text>
+        <text class="lbl" x="184" y="514" text-anchor="middle">IF / AND / OR · zone · time</text>
+        <path class="edge flow" d="M560 424 L252 470" marker-end="url(#af)"/>
+        <text class="lbl" x="392" y="440">structured events</text>
+
+        <!-- TIER 6 alerting -->
+        <text class="zlbl" x="24" y="562">alert &amp; notification</text>
+        <rect class="node" x="24"  y="576" width="190" height="52" rx="6"/>
+        <text class="t" x="119" y="600" text-anchor="middle">Alert manager</text>
+        <text class="lbl" x="119" y="616" text-anchor="middle">state · assignment</text>
+        <rect class="node" x="270" y="576" width="200" height="52" rx="6"/>
+        <text class="t" x="370" y="600" text-anchor="middle">Notifier</text>
+        <text class="lbl" x="370" y="616" text-anchor="middle">WebSocket · email</text>
+        <path class="edge flow" d="M150 526 L120 572" marker-end="url(#af)"/>
+        <text class="lbl" x="178" y="552">matched rule → action</text>
+        <line class="edge flow" x1="214" y1="602" x2="266" y2="602" marker-end="url(#af)"/>
+
+        <!-- TIER 7 application -->
+        <text class="zlbl" x="24" y="664">application</text>
+        <rect class="node" x="24"  y="678" width="220" height="52" rx="6"/>
+        <text class="t" x="134" y="702" text-anchor="middle">FastAPI</text>
+        <text class="lbl" x="134" y="718" text-anchor="middle">REST + WebSocket</text>
+        <rect class="node" x="300" y="678" width="180" height="52" rx="6"/>
+        <text class="t" x="390" y="708" text-anchor="middle">React dashboard</text>
+        <rect class="node" x="536" y="678" width="180" height="52" rx="6"/>
+        <text class="t" x="626" y="708" text-anchor="middle">Operators</text>
+        <path class="edge flow" d="M230 630 L150 674" marker-end="url(#af)"/>
+        <text class="lbl" x="250" y="650">alert + live event</text>
+        <line class="edge" x1="300" y1="700" x2="248" y2="700" marker-end="url(#ah)"/>
+        <line class="edge" x1="480" y1="704" x2="532" y2="704" marker-end="url(#ah)"/>
+        <line class="edge" x1="532" y1="716" x2="480" y2="716" marker-end="url(#ah)"/>
+        <text class="lbl" x="508" y="752" text-anchor="middle">acknowledge · configure</text>
+
+        <!-- store connectors, routed through the empty corridor at x~800-830 -->
+        <path class="edge dash" d="M770 296 L898 286" marker-end="url(#am)"/>
+        <text class="lbl" x="836" y="276" text-anchor="middle">frames · tracks</text>
+        <path class="edge dash" d="M716 390 L800 390 L800 74 L898 74" marker-end="url(#am)"/>
+        <text class="lbl" x="808" y="200">k-NN · events</text>
+        <path class="edge dash" d="M716 412 L822 412 L822 450 L898 450" marker-end="url(#am)"/>
+        <text class="lbl" x="830" y="430">snapshots</text>
+        <path class="edge dash" d="M134 730 L134 792 L834 792 L834 688 L898 688" marker-end="url(#am)"/>
+        <text class="lbl" x="820" y="784" text-anchor="end">admin actions</text>
+      </svg>
+      <figcaption>
+        The forward path (teal) never blocks on the application tier: events and alerts are written to
+        PostgreSQL and pushed over WebSocket, and the dashboard is a subscriber. Redis holds the frame
+        queue between ingestion and inference and the short-lived track state; the object store holds
+        event snapshots and short clips referenced by ID from the event row.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================ SECTION 2 -->
+  <section>
+    <h2>Inside the AI worker: one frame</h2>
+    <p class="kicker">per sampled frame, per track</p>
+    <p class="col">
+      Detection and tracking run once per frame. Face detection, the quality gate, and recognition run
+      per active track. The quality gate is the pivot: a track with no usable face is
+      <span class="state unv">UNVERIFIED</span> &mdash; the system holds the track but makes no identity claim,
+      which is what keeps false security alerts down.
+    </p>
+
+    <figure>
+      <svg class="dia" viewBox="0 0 1120 500" role="img"
+           aria-label="Per-frame pipeline: YOLO person detection, then BoT-SORT tracking, then per track SCRFD face detection and a face quality gate. Failing the gate sets identity status UNVERIFIED. Passing it runs ArcFace embedding and a k-NN search against the employee gallery; similarity at or above threshold T gives RECOGNIZED, below T gives UNKNOWN. All three states flow to track state and event deduplication, then an event. An UNKNOWN state that survives multi-frame confirmation raises a high-priority alert when a rule matches.">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+          <marker id="ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+        </defs>
+
+        <!-- BAND A: per-frame chain, then per-track -->
+        <rect class="node" x="16"  y="40" width="120" height="46" rx="5"/><text class="t sm" x="76" y="68" text-anchor="middle">frame in</text>
+        <rect class="node" x="176" y="40" width="140" height="46" rx="5"/><text class="t sm" x="246" y="60" text-anchor="middle">YOLO detect</text><text class="lbl" x="246" y="76" text-anchor="middle">persons</text>
+        <rect class="node" x="356" y="40" width="150" height="46" rx="5"/><text class="t sm" x="431" y="60" text-anchor="middle">BoT-SORT</text><text class="lbl" x="431" y="76" text-anchor="middle">assign track_id</text>
+        <rect class="node" x="546" y="40" width="140" height="46" rx="5"/><text class="t sm" x="616" y="60" text-anchor="middle">SCRFD face</text><text class="lbl" x="616" y="76" text-anchor="middle">per track</text>
+        <rect class="node" x="726" y="40" width="160" height="46" rx="5"/><text class="t sm" x="806" y="60" text-anchor="middle">quality gate</text><text class="lbl" x="806" y="76" text-anchor="middle">IOD · blur · pose</text>
+        <line class="edge" x1="136" y1="63" x2="172" y2="63" marker-end="url(#ah2)"/>
+        <line class="edge" x1="316" y1="63" x2="352" y2="63" marker-end="url(#ah2)"/>
+        <line class="edge" x1="506" y1="63" x2="542" y2="63" marker-end="url(#ah2)"/>
+        <line class="edge" x1="686" y1="63" x2="722" y2="63" marker-end="url(#ah2)"/>
+        <text class="lbl" x="334" y="34" text-anchor="middle">bboxes</text>
+        <text class="lbl" x="524" y="34" text-anchor="middle">track_id</text>
+        <text class="lbl" x="704" y="34" text-anchor="middle">face crop</text>
+
+        <!-- BAND B: embed + match (PASS only) -->
+        <path class="edge" d="M824 86 L824 146" marker-end="url(#ah2)"/>
+        <text class="lbl" x="832" y="114">pass</text>
+        <rect class="node" x="780" y="150" width="180" height="46" rx="5"/><text class="t sm" x="870" y="172" text-anchor="middle">ArcFace embed</text><text class="lbl" x="870" y="187" text-anchor="middle">512-d vector</text>
+        <rect class="node" x="520" y="150" width="200" height="46" rx="5"/><text class="t sm" x="620" y="172" text-anchor="middle">k-NN vs gallery</text><text class="lbl" x="620" y="187" text-anchor="middle">pgvector · cosine</text>
+        <line class="edge" x1="776" y1="173" x2="724" y2="173" marker-end="url(#ah2)"/>
+        <text class="lbl" x="750" y="167" text-anchor="middle">vector</text>
+
+        <!-- FAIL branch straight down to UNVERIFIED -->
+        <path class="edge" d="M744 86 L744 208" marker-end="url(#ah2)"/>
+        <text class="lbl" x="752" y="130">no usable face</text>
+
+        <!-- BAND C: the three identity states -->
+        <rect class="node n-rec" x="40"  y="210" width="200" height="44" rx="5"/><text class="t sm x-rec" x="140" y="237" text-anchor="middle">RECOGNIZED</text>
+        <rect class="node n-unk" x="300" y="210" width="200" height="44" rx="5"/><text class="t sm x-unk" x="400" y="237" text-anchor="middle">UNKNOWN</text>
+        <rect class="node n-unv" x="620" y="210" width="200" height="44" rx="5"/><text class="t sm x-unv" x="720" y="237" text-anchor="middle">UNVERIFIED</text>
+        <path class="edge" d="M516 173 L360 173" marker-end="url(#ah2)"/>
+        <path class="edge" d="M360 173 L140 173 L140 206" marker-end="url(#ah2)"/>
+        <path class="edge" d="M360 173 L360 206" marker-end="url(#ah2)"/>
+        <text class="lbl" x="250" y="167" text-anchor="middle">score ≥ T</text>
+        <text class="lbl" x="372" y="196">score &lt; T</text>
+
+        <!-- BAND D: converge -->
+        <rect class="node" x="40" y="320" width="480" height="50" rx="6"/>
+        <text class="t sm" x="280" y="342" text-anchor="middle">track state + event deduplication</text>
+        <text class="lbl" x="280" y="359" text-anchor="middle">one event per (camera, track, identity status)</text>
+        <path class="edge" d="M140 254 L140 318" marker-end="url(#ah2)"/>
+        <path class="edge" d="M400 254 L400 318" marker-end="url(#ah2)"/>
+        <path class="edge" d="M700 254 L700 292 L430 292 L430 318" marker-end="url(#ah2)"/>
+
+        <!-- BAND E: event, then the gated alert path -->
+        <rect class="node" x="40"  y="410" width="180" height="46" rx="5"/><text class="t sm" x="130" y="437" text-anchor="middle">event</text>
+        <rect class="node n-unk" x="300" y="410" width="220" height="46" rx="6"/><text class="t sm" x="410" y="431" text-anchor="middle">multi-frame confirm</text><text class="lbl" x="410" y="446" text-anchor="middle">≥ 5 of last 8 gate-passed</text>
+        <rect class="node n-unk" x="600" y="410" width="230" height="46" rx="6"/><text class="t sm x-unk" x="715" y="431" text-anchor="middle">HIGH-PRIORITY ALERT</text><text class="lbl" x="715" y="446" text-anchor="middle">when a rule matches</text>
+        <path class="edge" d="M130 370 L130 406" marker-end="url(#ah2)"/>
+        <path class="edge crit" d="M220 433 L296 433" marker-end="url(#ac)"/>
+        <text class="lbl x-unk" x="300" y="398">identity = UNKNOWN</text>
+        <path class="edge crit" d="M520 433 L596 433" marker-end="url(#ac)"/>
+      </svg>
+      <figcaption>
+        <code>T</code> is a fixed, documented similarity threshold &mdash; the same operating point decides
+        RECOGNIZED and UNKNOWN. The alert path is gated: an UNKNOWN event becomes an alert only after
+        multi-frame confirmation and a matching rule, so one bad frame of a known employee never gets there.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================ SECTION 3 -->
+  <section>
+    <h2>One person, one pass</h2>
+    <p class="kicker">event lifecycle · entrance camera</p>
+    <p class="col">
+      A concrete walk-through of the flow above, for a registered employee. Times are illustrative,
+      against the Nominal test conditions in the acceptance-criteria document.
+    </p>
+    <ol class="flow-list">
+      <li><span class="tick">T+0.0s</span> Person crosses the door line. YOLO detects them; BoT-SORT opens <code>track 101</code>. No face yet &rarr; <span class="state unv">UNVERIFIED</span>. No event, no claim.</li>
+      <li><span class="tick">T+0.4s</span> Face becomes large and frontal enough to pass the quality gate. ArcFace produces a 512-d embedding.</li>
+      <li><span class="tick">T+0.9s</span> k-NN against the employee gallery returns a top-1 cosine score above <code>T</code> &rarr; <span class="state rec">RECOGNIZED</span> as <code>Employee A</code>. The event engine emits <b>one</b> <code>identity_recognized</code> event with camera, track, employee, confidence, timestamp, and a snapshot reference.</li>
+      <li><span class="tick">T+1&ndash;8s</span> The person keeps walking. <code>track 101</code> stays stable; the face drops out of gate quality intermittently but the identity is held. <b>No new events</b> &mdash; deduplication suppresses them because <code>(camera, track, status)</code> is unchanged.</li>
+      <li><span class="tick">T+8.2s</span> Person leaves the frame. After 5s with no detection matched to <code>track 101</code>, the track closes. A later re-entry is a new track and a new event.</li>
+    </ol>
+    <p class="col" style="margin-top:20px">
+      For an <b>unregistered</b> person the first three steps are identical until the k-NN score falls below
+      <code>T</code> &rarr; <span class="state unk">UNKNOWN</span>. If <code>&ge; 5 of the last 8</code> gate-passed
+      frames agree, and a rule such as <em>identity = UNKNOWN on the entrance camera</em> matches, the alert
+      manager raises a high-priority alert and the notifier pushes it to every connected operator.
+    </p>
+  </section>
+
+  <!-- ============================================ SECTION 4 -->
+  <section>
+    <h2>Deployment topology</h2>
+    <p class="kicker">on-premise · single host · MVP baseline</p>
+    <p class="col">
+      The MVP runs every service as a container on one GPU host on the local network, with cameras on
+      their own segment. This gives predictable latency and keeps biometric data on-site. The same
+      compose file scales out by replica count before it ever needs a second host.
+    </p>
+
+    <figure>
+      <svg class="dia" viewBox="0 0 1120 500" role="img"
+           aria-label="Deployment: a camera VLAN with Hikvision cameras, a DVR and a managed switch connects over RTSP port 554 to a single GPU server running Ubuntu 22.04 and Docker with the NVIDIA runtime. The server runs service containers (ingestion, ai-worker on the GPU, api on FastAPI, web on nginx and React) and store containers (PostgreSQL with pgvector, Redis, object store, Prometheus with Grafana). Operator browsers on the office LAN reach the server over HTTPS and WSS. Scaling out means adding ingestion and ai-worker replicas first.">
+        <defs>
+          <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+        </defs>
+
+        <!-- camera vlan -->
+        <rect class="zone" x="16" y="66" width="234" height="256" rx="8"/>
+        <text class="zlbl" x="26" y="54">camera VLAN</text>
+        <rect class="node" x="40" y="92"  width="186" height="44" rx="5"/><text class="t sm" x="133" y="119" text-anchor="middle">Hikvision camera ×N</text>
+        <rect class="node" x="40" y="158" width="186" height="44" rx="5"/><text class="t sm" x="133" y="185" text-anchor="middle">DVR / NVR</text>
+        <rect class="node" x="40" y="250" width="186" height="44" rx="5"/><text class="t sm" x="133" y="277" text-anchor="middle">managed switch</text>
+        <line class="edge" x1="133" y1="136" x2="133" y2="156" marker-end="url(#ah3)"/>
+        <line class="edge" x1="133" y1="202" x2="133" y2="248" marker-end="url(#ah3)"/>
+
+        <!-- server -->
+        <rect class="zone" x="330" y="48" width="612" height="330" rx="10"/>
+        <text class="zlbl" x="340" y="38">GPU server · Ubuntu 22.04 · Docker · NVIDIA runtime</text>
+        <text class="zlbl" x="358" y="70" style="letter-spacing:.06em">services</text>
+        <text class="zlbl" x="632" y="70" style="letter-spacing:.06em">stores &amp; ops</text>
+
+        <rect class="node" x="354" y="80"  width="210" height="44" rx="5"/><text class="t sm" x="459" y="101" text-anchor="middle">ingestion ×N</text><text class="lbl" x="459" y="116" text-anchor="middle">RTSP decode · sample</text>
+        <rect class="node" x="354" y="140" width="210" height="44" rx="5"/><text class="t sm" x="459" y="161" text-anchor="middle">ai-worker ×N · GPU</text><text class="lbl" x="459" y="176" text-anchor="middle">detect · track · face</text>
+        <rect class="node" x="354" y="200" width="210" height="44" rx="5"/><text class="t sm" x="459" y="221" text-anchor="middle">api</text><text class="lbl" x="459" y="236" text-anchor="middle">FastAPI · REST + WS</text>
+        <rect class="node" x="354" y="260" width="210" height="44" rx="5"/><text class="t sm" x="459" y="281" text-anchor="middle">web</text><text class="lbl" x="459" y="296" text-anchor="middle">nginx + React build</text>
+
+        <rect class="store" x="628" y="80"  width="286" height="44" rx="5"/><text class="t sm" x="771" y="101" text-anchor="middle">postgres</text><text class="lbl" x="771" y="116" text-anchor="middle">+ pgvector</text>
+        <rect class="store" x="628" y="140" width="286" height="44" rx="5"/><text class="t sm" x="771" y="166" text-anchor="middle">redis</text>
+        <rect class="store" x="628" y="200" width="286" height="44" rx="5"/><text class="t sm" x="771" y="221" text-anchor="middle">object store</text><text class="lbl" x="771" y="236" text-anchor="middle">volume → MinIO / S3</text>
+        <rect class="node" x="628" y="260" width="286" height="44" rx="5"/><text class="t sm" x="771" y="286" text-anchor="middle">prometheus + grafana</text>
+
+        <line class="edge" x1="459" y1="124" x2="459" y2="138" marker-end="url(#ah3)"/>
+        <line class="edge" x1="459" y1="184" x2="459" y2="198" marker-end="url(#ah3)"/>
+        <path class="edge" d="M564 158 L626 158" marker-end="url(#ah3)"/>
+        <text class="lbl" x="595" y="152" text-anchor="middle">queue</text>
+        <path class="edge" d="M564 214 L610 214 L610 108 L626 108" marker-end="url(#ah3)"/>
+        <text class="lbl" x="600" y="180">events · config</text>
+        <path class="edge" d="M564 226 L626 222" marker-end="url(#ah3)"/>
+
+        <!-- link camera->server -->
+        <line class="edge flow" x1="226" y1="264" x2="350" y2="104" marker-end="url(#af)"/>
+        <text class="lbl" x="256" y="150">RTSP · 554</text>
+
+        <!-- office lan -->
+        <rect class="zone" x="968" y="150" width="140" height="150" rx="8"/>
+        <text class="zlbl" x="978" y="140">office LAN</text>
+        <rect class="node" x="982" y="196" width="112" height="58" rx="5"/><text class="t sm" x="1038" y="220" text-anchor="middle">operator</text><text class="t sm" x="1038" y="236" text-anchor="middle">browsers</text>
+        <line class="edge" x1="980" y1="222" x2="946" y2="222" marker-end="url(#ah3)"/>
+        <text class="lbl" x="960" y="200" text-anchor="end">HTTPS · WSS</text>
+
+        <!-- scale note -->
+        <rect x="16" y="392" width="380" height="104" rx="8" class="node" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+        <text class="t sm" x="32" y="416">Scale-out path — 1 → 5 → 100 → 1000+ cameras</text>
+        <text class="lbl" x="32" y="437">Add ingestion + ai-worker replicas first; move postgres /</text>
+        <text class="lbl" x="32" y="454">redis / storage to their own hosts only once a tier saturates.</text>
+        <text class="lbl" x="32" y="478">MVP = 1 camera · 1 ingestion · 1 ai-worker · one host.</text>
+      </svg>
+      <figcaption>
+        MVP = one camera, one <code>ingestion</code>, one <code>ai-worker</code>, everything on a single
+        RTX-class host. Prometheus and Grafana are present from the start so the performance baseline
+        (FPS, latency, GPU/VRAM) is measured, not guessed.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================ SECTION 5 -->
+  <section>
+    <h2>Component responsibilities</h2>
+    <p class="kicker">what each service owns · how it scales</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Service</th><th>Owns</th><th>Key tech</th><th>Scales by</th></tr></thead>
+        <tbody>
+          <tr><td><code>ingestion</code></td><td>Connect RTSP, decode, validate frames, sample to target FPS, reconnect on drop</td><td>OpenCV · FFmpeg</td><td>One worker (or process) per camera</td></tr>
+          <tr><td><code>ai-worker</code></td><td>Detection, tracking, face detection, quality gate, embedding &mdash; per sampled frame</td><td>PyTorch · Ultralytics YOLO · BoT-SORT · SCRFD · ArcFace · ONNX/TensorRT</td><td>GPU replicas; shard cameras across workers</td></tr>
+          <tr><td>identity &amp; event engine</td><td>k-NN match, identity-state decision, track state, event construction + deduplication</td><td>pgvector · Redis</td><td>Stateless API replicas; state in Postgres/Redis</td></tr>
+          <tr><td>rule engine</td><td>Evaluate IF/AND/OR conditions (identity, zone, time) against each event; resolve actions</td><td>in <code>api</code> or its own service</td><td>Partition by site / camera group</td></tr>
+          <tr><td>alert &amp; notification</td><td>Alert lifecycle (open, acknowledge, assign, close), fan-out to channels</td><td>WebSocket · SMTP · webhook (later)</td><td>Queue-backed; add consumers</td></tr>
+          <tr><td><code>api</code></td><td>Auth &amp; RBAC, CRUD for cameras/employees/rules, event search, live event stream</td><td>FastAPI · WebSocket</td><td>Stateless replicas behind a load balancer</td></tr>
+          <tr><td><code>web</code></td><td>Live monitoring with overlays, dashboards, event review, enrollment UI</td><td>React · TypeScript</td><td>Static build behind a CDN / nginx</td></tr>
+          <tr><td>PostgreSQL + pgvector</td><td>System of record: orgs, sites, cameras, employees, embeddings, events, alerts, audit</td><td>PostgreSQL</td><td>Read replicas; partition events by time</td></tr>
+          <tr><td>Redis</td><td>Frame queue, live track state (TTL), dedup windows, WebSocket fan-out</td><td>Redis</td><td>Cluster when one instance is saturated</td></tr>
+          <tr><td>object store</td><td>Event snapshots and short clips, referenced by ID from the event row</td><td>Filesystem volume &rarr; MinIO / S3</td><td>Native to the backing store</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================ SECTION 6 -->
+  <section>
+    <h2>From MVP to this</h2>
+    <p class="kicker">each phase adds one tier &mdash; the shape does not change</p>
+    <p class="col">
+      The phased roadmap builds this diagram bottom-up. Nothing is thrown away between phases: each one
+      adds a service or a data path that the architecture already has a place for.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Phase</th><th>Adds to the architecture</th><th>New in the diagram</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag">1 · now</span></td><td>Camera connection: RTSP decoder + frame validation + reconnect</td><td><code>ingestion</code> &rarr; live view (no AI)</td></tr>
+          <tr><td><span class="tag">2</span></td><td>Person detection + tracking</td><td><code>ai-worker</code>: YOLO + BoT-SORT; <code>track_id</code></td></tr>
+          <tr><td><span class="tag">3</span></td><td>Face recognition + enrollment</td><td>SCRFD, quality gate, ArcFace, pgvector gallery, identity states</td></tr>
+          <tr><td><span class="tag">4</span></td><td>Event engine</td><td>Event builder, deduplication, event rows in Postgres</td></tr>
+          <tr><td><span class="tag">5</span></td><td>Backend + API</td><td><code>api</code>: auth, RBAC, CRUD, event search</td></tr>
+          <tr><td><span class="tag">6</span></td><td>Dashboard</td><td><code>web</code>: live monitoring, events, alerts, WebSocket stream</td></tr>
+          <tr><td><span class="tag">7</span></td><td>Rule engine</td><td>Rule evaluation, alert manager, notifier</td></tr>
+          <tr><td><span class="tag">8</span></td><td>Production hardening</td><td>ONNX/TensorRT, Prometheus/Grafana, reconnect/soak</td></tr>
+          <tr><td><span class="tag">9</span></td><td>Multi-camera</td><td>Replica counts on <code>ingestion</code> and <code>ai-worker</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Reality Connector · production architecture, target design · companion to the BRD v1.0 and the
+    MVP Acceptance Criteria. Diagrams describe intent, not a shipped system &mdash; Phase 1 is in progress.
+  </footer>
+</div>
