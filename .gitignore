@@ -12,12 +12,18 @@ phase1_camera/.env
 .env
 *.log
 phase1_camera/logs/
+phase2_detect/logs/
 logs/
 snapshots/
 scratch/
 *.jpg
 *.png
 *.mp4
+
+# Model weights (auto-downloaded)
+*.pt
+*.onnx
+*.engine
 
 # Editors / OS
 .vscode/

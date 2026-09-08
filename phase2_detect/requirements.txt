@@ -1,0 +1,5 @@
+# Install the CUDA build of PyTorch FIRST (see README), then:
+#   pip install -r phase2_detect/requirements.txt
+ultralytics>=8.3.0
+torch>=2.4
+torchvision>=0.19
