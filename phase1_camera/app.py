@@ -50,8 +50,11 @@ def main(argv=None) -> int:
     cfg = Config.load(args.env)
     log = get_logger(level=cfg.log_level, log_dir=str(cfg.log_dir))
 
-    if cfg.uses_rtsp and not cfg.camera_ip:
-        log.error("CAMERA_IP is not set. Copy phase1_camera/.env.example to .env and fill it in.")
+    if cfg.uses_rtsp and not cfg.camera_ip and not cfg.rtsp_url_override:
+        log.error(
+            "No camera source configured. Set CAMERA_IP (+ credentials/channel), or "
+            "RTSP_URL, or CAMERA_SOURCE in phase1_camera/.env."
+        )
         return 2
 
     cam = CameraStream(cfg, log)

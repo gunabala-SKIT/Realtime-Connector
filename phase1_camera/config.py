@@ -132,8 +132,9 @@ class Config:
 
         if self.rtsp_url_override:
             after_scheme = self.rtsp_url_override.split("://", 1)[-1]
-            if "@" in after_scheme.split("/", 1)[0]:
-                return self.rtsp_url_override  # already has credentials
+            has_creds = "@" in after_scheme.split("/", 1)[0]
+            if has_creds or not (self.camera_user or self.camera_password):
+                return self.rtsp_url_override  # already has creds, or none to add
             scheme, rest = self.rtsp_url_override.split("://", 1)
             return f"{scheme}://{user}:{password}@{rest}"
 
