@@ -53,6 +53,7 @@ class PersonTracker:
         self._frame_i = 0
         self._last: list[Track] = []
         self._infer_ms = 0.0
+        self.last_raw: list[Track] = []
 
     def _resolve_device(self, pref: str) -> str:
         if pref:
@@ -68,6 +69,23 @@ class PersonTracker:
     @property
     def last_infer_ms(self) -> float:
         return self._infer_ms
+
+    def raw_detect(self, frame: np.ndarray) -> list[Track]:
+        """Plain detection (no tracker), for the --raw debug overlay: shows what
+        the model sees before BoT-SORT filters/associates it."""
+        r = self.model.predict(
+            frame, classes=self.cfg.classes, conf=self.cfg.conf, iou=self.cfg.iou,
+            imgsz=self.cfg.imgsz, device=self.device, half=self.cfg.half, verbose=False,
+        )[0]
+        out: list[Track] = []
+        b = getattr(r, "boxes", None)
+        if b is not None and b.xyxy is not None and len(b) > 0:
+            for (x1, y1, x2, y2), c, cl in zip(
+                b.xyxy.cpu().numpy(), b.conf.cpu().numpy(), b.cls.cpu().numpy().astype(int)
+            ):
+                out.append(Track(None, int(cl), float(c), int(x1), int(y1), int(x2), int(y2)))
+        self.last_raw = out
+        return out
 
     def process(self, frame: np.ndarray) -> list[Track]:
         """Run detection+tracking on this frame (or reuse the last result if this

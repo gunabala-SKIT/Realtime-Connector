@@ -64,10 +64,28 @@ current person count, and the number of unique track IDs seen.
 
 ## What "working" looks like (maps to acceptance doc §5.1–5.2)
 
-- Every visible person gets a box; `person` confidence ≥ ~0.35
+- Every visible person gets a box; `person` confidence ≥ `YOLO_CONF`
 - Each person keeps the **same ID** while continuously visible
 - Walking out and back in gets a **new ID** (cross-camera / re-ID is later)
 - `ai_fps` keeps up with the stream (raise `PROCESS_EVERY_N` or lower `YOLO_IMGSZ` if not)
+
+## Missing people? — tune for recall
+
+Run with `--raw` to draw the model's raw detections (thin grey) alongside the
+tracked boxes (coloured). This tells you *where* the loss is:
+
+| `--raw` shows | Meaning | Fix |
+|---|---|---|
+| No grey box on a visible person | the **detector** missed them | bigger model (`yolo11s` → `yolo11m`), `YOLO_IMGSZ=1280`, lower `YOLO_CONF` (0.20) |
+| Grey box but no coloured box | the **tracker** dropped them | usually resolves in 1–2 frames as BoT-SORT locks on; persistent → lower `new_track_thresh` in a custom `TRACKER` yaml |
+| Overlapping people merged into one box | NMS too aggressive | raise `YOLO_IOU` to 0.7 |
+
+Small / distant / top-down / partly-occluded people are the usual failure mode —
+`yolo11n@640` (the old default) is the weakest config for those.
+
+```bash
+.venv\Scripts\python.exe -m phase2_detect.app --raw
+```
 
 ## Module layout
 

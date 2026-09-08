@@ -19,7 +19,7 @@ from phase1_camera.logger import get_logger
 
 from .config import Phase2Config
 from .detector import PersonTracker
-from .draw import draw_tracks
+from .draw import draw_raw, draw_tracks
 
 
 class _Rate:
@@ -43,6 +43,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--duration", type=float, default=0, help="stop after N seconds (0 = until quit)")
     p.add_argument("--metrics-interval", type=float, default=10)
     p.add_argument("--save", metavar="PATH", help="write the annotated stream to an .mp4")
+    p.add_argument("--raw", action="store_true",
+                   help="also draw raw detections (thin grey) - shows detector vs tracker loss")
     p.add_argument("--env", help="path to an alternate .env file")
     return p.parse_args(argv)
 
@@ -101,6 +103,7 @@ def main(argv=None) -> int:
                     time.sleep(0.02)
                 continue
 
+            raw = tracker.raw_detect(frame) if args.raw else []
             tracks = tracker.process(frame)
             ai_rate.tick()
             disp_rate.tick()
@@ -128,12 +131,15 @@ def main(argv=None) -> int:
             now = time.time()
             if now - last_metrics >= args.metrics_interval:
                 log.info(
-                    "persons=%d unique_ids=%d ai_fps=%.1f infer_ms=%.0f cam=%s",
-                    persons, len(unique_ids), stats["ai_fps"], stats["infer_ms"],
-                    cam.get_status()["actual_fps"],
+                    "persons=%d unique_ids=%d%s ai_fps=%.1f infer_ms=%.0f cam=%s",
+                    persons, len(unique_ids),
+                    f" raw_dets={len(raw)}" if args.raw else "",
+                    stats["ai_fps"], stats["infer_ms"], cam.get_status()["actual_fps"],
                 )
                 last_metrics = now
 
+            if args.raw:
+                draw_raw(frame, raw)
             draw_tracks(frame, tracks, stats)
 
             if args.save:

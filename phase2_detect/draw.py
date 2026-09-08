@@ -17,6 +17,13 @@ def track_color(track_id: int | None) -> tuple[int, int, int]:
     return (int(b * 255), int(g * 255), int(r * 255))
 
 
+def draw_raw(frame, raw_dets) -> None:
+    """Thin grey boxes for un-tracked detections (--raw debug)."""
+    for d in raw_dets:
+        cv2.rectangle(frame, (d.x1, d.y1), (d.x2, d.y2), (170, 170, 170), 1)
+        cv2.putText(frame, f"{d.conf:.2f}", (d.x1, d.y2 + 12), _FONT, 0.4, (170, 170, 170), 1, cv2.LINE_AA)
+
+
 def draw_tracks(frame, tracks, stats: dict) -> None:
     for t in tracks:
         col = track_color(t.track_id)
