@@ -115,6 +115,13 @@ once the stream has been up. The **initial** connect is bounded by `STARTUP_MAX_
 | Video freezes | network bandwidth, bitrate, decoder load — try sub stream |
 | Auth fails | credentials; URL-encode special characters (handled automatically here) |
 | High CPU | use the sub stream; H.264 over H.265 for now |
+| Green/grey mush, only motion visible, never clears; `PPS id out of range` / `SPS 0 does not exist` in the log | **H.264+ / H.265+ / "Smart Codec" is enabled on the DVR.** It emits a non-standard stream (one I-frame, then only P-frames) that no third-party decoder can follow. Fix: on the DVR, per camera, set `Enable H.264+ = Disabled` and Video Encoding = plain `H.264` for main **and** sub stream, then **reboot the DVR**. Confirm the cause first with iVMS-4200 / Hik-Connect (private protocol, port 8000 — decodes `+` fine): clean there but garbage in VLC = the `+` codec. |
+
+### Notes for the DS-7204HQHI-K1 (this project's DVR)
+
+4 analog cameras on channels A1–A4; RTSP only from the DVR (no per-camera IP).
+H.264+ is on by default — disable it via `Menu → Record → Parameters → Record` tab,
+per camera, then `Menu → Maintenance → Reboot`. Set I-frame interval to 25 while there.
 
 ## Definition of Done (doc §25)
 
