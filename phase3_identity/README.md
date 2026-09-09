@@ -39,9 +39,11 @@ torch's bundle to the search path and calls `onnxruntime.preload_dlls()` —
 without this ORT silently runs on CPU (~2.4 s/frame instead of ~50 ms). On start
 it logs which execution provider each model got.
 
-**GTX 1660 timings:** face detect + embed ≈ 40–70 ms (1–6 faces) on top of
-person detection ≈ 40 ms → ~8–12 fps processed. The threaded capture keeps it
-live by dropping frames.
+**GTX 1660 timings:** person detection ≈ 25 ms + face detect/embed ≈ 40 ms ≈
+**63 ms → ~16 fps** processed steady-state. The first inference costs ~10 s
+(cuDNN autotuning) — the app runs a warm-up pass before the capture loop so this
+happens at startup, not on the first live frame. The threaded capture keeps the
+view live by dropping frames when needed.
 
 ## 1. Enrol employees
 

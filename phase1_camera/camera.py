@@ -157,12 +157,21 @@ class CameraStream:
         self.log.error("Initial connection failed after %d attempt(s).", attempts)
         return False
 
+    def _is_file_source(self) -> bool:
+        src = self.cfg.camera_source
+        return bool(src) and not str(src).isdigit() and "://" not in str(src)
+
     def read_frame(self) -> Tuple[bool, Optional["cv2.Mat"]]:
         """One read attempt. Returns ``(False, None)`` on any failure; never raises."""
         if self.cap is None:
             return False, None
 
         ok, frame = self.cap.read()
+        if (not ok or frame is None) and self._is_file_source():
+            # a video file just hit EOF - loop it (handy for testing/tuning)
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = self.cap.read()
+
         if not ok or frame is None or not self._valid_frame(frame):
             self.metrics.frames_failed += 1
             self._consecutive_failures += 1

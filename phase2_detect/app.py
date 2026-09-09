@@ -62,6 +62,8 @@ def main(argv=None) -> int:
 
     stream = LatestFrameStream(CameraStream(cfg.camera, log), log)
     tracker = PersonTracker(cfg, log)
+    log.info("Warming up model ...")
+    tracker.warmup()
 
     stop = {"flag": False}
 

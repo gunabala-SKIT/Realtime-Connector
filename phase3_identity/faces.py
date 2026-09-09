@@ -118,6 +118,11 @@ class FaceEngine:
         if want_cuda and any("CUDA" not in ep for ep in eps.values()):
             self.log.warning("Some face models fell back to CPU - recognition will be slow.")
 
+    def warmup(self) -> None:
+        blank = np.zeros((self.cfg.face_det_size, self.cfg.face_det_size, 3), dtype=np.uint8)
+        for _ in range(2):
+            self.app.get(blank)
+
     # ------------------------------------------------------------------ detect
     def detect(self, frame: np.ndarray) -> list[DetectedFace]:
         out: list[DetectedFace] = []

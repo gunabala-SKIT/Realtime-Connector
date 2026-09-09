@@ -70,6 +70,14 @@ class PersonTracker:
     def last_infer_ms(self) -> float:
         return self._infer_ms
 
+    def warmup(self) -> None:
+        """Run a couple of dummy passes so the first real frame isn't a 10 s stall
+        (cuDNN autotuning + CUDA context + graph build happen on the first call)."""
+        blank = np.zeros((self.cfg.imgsz, self.cfg.imgsz, 3), dtype=np.uint8)
+        for _ in range(2):
+            self.model.track(blank, persist=False, tracker=self.cfg.tracker,
+                             imgsz=self.cfg.imgsz, device=self.device, verbose=False)
+
     def raw_detect(self, frame: np.ndarray) -> list[Track]:
         """Plain detection (no tracker), for the --raw debug overlay: shows what
         the model sees before BoT-SORT filters/associates it."""
