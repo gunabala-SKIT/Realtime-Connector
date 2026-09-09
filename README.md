@@ -8,8 +8,9 @@ See `Reality_Connector_MVP_Acceptance_Criteria_v0.1.docx` for measurable MVP tar
 | Phase | Scope | State |
 |---|---|---|
 | **Phase 1** | RTSP → OpenCV live view, reconnect, logging, metrics | Done — [`phase1_camera/`](phase1_camera/README.md). Validated against a phone RTSP feed (the site DVR's RTSP output is misconfigured — see memory). |
-| **Phase 2** | YOLO11 person detection + BoT-SORT tracking | In progress — [`phase2_detect/`](phase2_detect/README.md) |
-| Phase 3+ | Face detection/recognition, event engine, rules, dashboard | Not started |
+| **Phase 2** | YOLO11 person detection + BoT-SORT tracking, threaded low-latency capture | Done — [`phase2_detect/`](phase2_detect/README.md) |
+| **Phase 3** | SCRFD face detection + ArcFace recognition + enrollment + RECOGNIZED/UNKNOWN/UNVERIFIED identity states | In progress — [`phase3_identity/`](phase3_identity/README.md) |
+| Phase 4+ | Event engine, FastAPI backend, rules, dashboard | Not started |
 
 ## Quick start (Phase 1)
 

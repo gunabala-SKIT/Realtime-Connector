@@ -1,0 +1,17 @@
+# Phase 3 - on top of Phase 1 + Phase 2.
+#
+# onnxruntime notes (Windows, GTX 1660, driver 560 = CUDA 12.x max):
+#  - insightface pulls in CPU `onnxruntime`, which shadows the GPU build.
+#  - the latest `onnxruntime-gpu` targets CUDA 13 (needs driver 580+). Pin to a
+#    CUDA-12 build and add the matching NVIDIA runtime wheels:
+#       pip uninstall -y onnxruntime onnxruntime-gpu
+#       pip install "onnxruntime-gpu==1.20.2" nvidia-cudnn-cu12 nvidia-cufft-cu12 \
+#           nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
+#  - verify:  python -c "import onnxruntime as o; print(o.get_available_providers())"
+#    then confirm a real session doesn't fall back to CPU (no 'Failed to load ...dll').
+insightface>=0.7.3
+onnxruntime-gpu==1.20.2
+nvidia-cudnn-cu12
+nvidia-cufft-cu12
+nvidia-cuda-runtime-cu12
+nvidia-cublas-cu12
