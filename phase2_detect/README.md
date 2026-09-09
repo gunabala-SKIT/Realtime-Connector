@@ -96,11 +96,24 @@ Small / distant / top-down / partly-occluded people are the usual failure mode �
 | `draw.py` | box + ID + stats overlay |
 | `app.py` | capture → track → draw → display / record loop, reconnect, metrics |
 
+## Latency
+
+Capture runs in a **background thread** (`stream.py`) that holds only the newest
+frame; inference processes that and drops everything in between, so app-side
+latency stays ≈ one inference pass regardless of GPU speed. The metrics line
+shows `capture_fps` (stream), `proc_fps` (inference), and `dropped` (frames never
+processed — expected to be non-zero when `proc_fps` < `capture_fps`).
+
+Remaining latency is inherent to a phone-as-camera: the phone's H.264 encode plus
+RTSP buffering is typically 0.3–1 s. To cut it:
+- `CAPTURE_BUFFER=1` in `.env` (keep only the newest decoded frame)
+- lower the IP Webcam resolution / bitrate in the phone app
+- a real IP camera has far lower latency than a phone app
+
+`--raw` runs a second inference per frame (~2× slower) — debug only.
+
 ## Notes
 
-- Detection and capture run in one loop (synchronous). If the GPU can't keep up,
-  frames buffer — use `PROCESS_EVERY_N` or set `CAPTURE_BUFFER=1` in `.env`.
-  A producer/consumer split is a Phase 7 (optimization) concern.
 - `Track.track_id` is `None` for the first frame or two until BoT-SORT locks on.
 - Ultralytics YOLO is **AGPL-3.0**; a commercial licence is needed for production
   (see the MVP Acceptance Criteria doc, Assumptions & Dependencies).
