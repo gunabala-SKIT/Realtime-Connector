@@ -16,6 +16,8 @@ phase2_detect/logs/
 logs/
 snapshots/
 scratch/
+img/
+enroll_photos/
 *.jpg
 *.png
 *.mp4
