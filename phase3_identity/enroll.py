@@ -67,17 +67,20 @@ def main(argv=None) -> int:
             log.warning("%s : %d faces (expected 1) - skipped", path, len(faces))
             continue
         face = faces[0]
-        q = engine.quality(face)
+        q = engine.quality(face, for_enroll=True)
         if not q.passed:
-            log.warning("%s : quality gate failed (%s) - skipped", path, ", ".join(q.reasons))
+            log.warning("%s : rejected - %s", path, "; ".join(q.reasons))
             continue
         embeddings.append(face.embedding)
-        log.info("%s : OK  iod=%.0f yaw=%.0f blur=%.0f det=%.2f",
+        log.info("%s : OK  (eyes %.0fpx apart, yaw %+.0f, sharpness %.0f, det %.2f)",
                  path, face.iod, face.yaw, face.blur, face.det_score)
 
     if len(embeddings) < args.min_images:
         log.error("Only %d usable image(s), need >= %d. Nothing enrolled.",
                   len(embeddings), args.min_images)
+        log.error("Enrolment photos should be close-up headshots: face fills at least a third "
+                  "of the frame, eyes level, looking at the camera, well lit, in focus. "
+                  "A phone selfie at arm's length works well.")
         gallery.close()
         return 1
 

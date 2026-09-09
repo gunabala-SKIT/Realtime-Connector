@@ -145,17 +145,19 @@ class FaceEngine:
         return out
 
     # ---------------------------------------------------------------- quality
-    def quality(self, face: DetectedFace) -> QualityResult:
+    def quality(self, face: DetectedFace, *, for_enroll: bool = False) -> QualityResult:
         c = self.cfg
+        min_iod = c.enroll_min_iod if for_enroll else c.min_iod
         reasons: list[str] = []
         if face.det_score < c.min_det_score:
-            reasons.append(f"det_score {face.det_score:.2f}<{c.min_det_score}")
-        if face.iod < c.min_iod:
-            reasons.append(f"iod {face.iod:.0f}<{c.min_iod:.0f}px")
+            reasons.append(f"low detection confidence ({face.det_score:.2f})")
+        if face.iod < min_iod:
+            reasons.append(f"face too small (eyes {face.iod:.0f}px apart, need >= {min_iod:.0f}) "
+                           "- use a closer / higher-resolution photo")
         if abs(face.yaw) > c.max_yaw:
-            reasons.append(f"yaw {face.yaw:.0f}>{c.max_yaw:.0f}deg")
+            reasons.append(f"head turned too far ({face.yaw:+.0f} deg, max {c.max_yaw:.0f})")
         if face.blur < c.min_blur:
-            reasons.append(f"blur {face.blur:.0f}<{c.min_blur:.0f}")
+            reasons.append(f"too blurred (sharpness {face.blur:.0f}, need >= {c.min_blur:.0f})")
         return QualityResult(not reasons, reasons)
 
 

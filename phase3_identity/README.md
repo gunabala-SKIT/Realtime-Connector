@@ -53,14 +53,14 @@ view live by dropping frames when needed.
     C:\path\to\asha\*.jpg
 ```
 
-- 3+ frontal photos per person is ideal; 1 works.
-- Each image must have **exactly one** face that passes the quality gate — bad
-  ones are rejected with a reason (no face / multiple faces / small / blurred / turned).
+- **Close-up headshots**: face fills at least a third of the frame, eyes level,
+  looking at the camera, well lit, in focus. A phone selfie at arm's length is ideal.
+  A photo where the face is small (e.g. a full-body shot) is rejected — ArcFace
+  needs ~150 px+ of face to make a usable embedding.
+- 3+ photos per person is ideal; 1 works.
+- Each image must have **exactly one** face that passes the enrolment gate
+  (`ENROLL_MIN_IOD`, default 45 px between the eyes ≈ 110 px face width). Rejections say why.
 - Embeddings are averaged and L2-normalised, stored in `phase3_identity/gallery.db`.
-
-```bash
-.venv\Scripts\python.exe -m phase3_identity.enroll --code EMP001 --name X --disable   # (not yet — use SQL)
-```
 
 ## 2. Run
 

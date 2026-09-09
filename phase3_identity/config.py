@@ -41,7 +41,8 @@ class Phase3Config:
     face_device: str              # "", "cpu", "cuda"
 
     # quality gate (acceptance doc S5.4)
-    min_iod: float                # inter-ocular distance, px
+    min_iod: float                # inter-ocular distance, px (live recognition)
+    enroll_min_iod: float         # inter-ocular distance, px (enrolment - stricter is better)
     max_yaw: float                # degrees
     min_blur: float               # variance of Laplacian
     min_det_score: float
@@ -76,6 +77,7 @@ class Phase3Config:
             face_det_size=_get_int("FACE_DET_SIZE", 640),
             face_device=_get("FACE_DEVICE", "") or "",
             min_iod=_get_float("FACE_MIN_IOD", 40.0),
+            enroll_min_iod=_get_float("ENROLL_MIN_IOD", 45.0),
             max_yaw=_get_float("FACE_MAX_YAW", 30.0),
             min_blur=_get_float("FACE_BLUR_MIN", 55.0),
             min_det_score=_get_float("FACE_DET_SCORE_MIN", 0.55),
