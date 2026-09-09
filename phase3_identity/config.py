@@ -61,7 +61,8 @@ class Phase3Config:
     def load(cls, env_file: str | os.PathLike | None = None) -> "Phase3Config":
         phase2 = Phase2Config.load(env_file)  # runs load_dotenv()
 
-        gallery_db = Path(_get("GALLERY_DB", str(BASE_DIR / "gallery.db")))
+        # Chroma persistent dir (was a single .db file pre-Phase-5)
+        gallery_db = Path(_get("GALLERY_DIR", _get("GALLERY_DB", str(BASE_DIR / "gallery_chroma"))))
         if not gallery_db.is_absolute():
             gallery_db = BASE_DIR / gallery_db
 

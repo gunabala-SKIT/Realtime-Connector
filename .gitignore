@@ -27,15 +27,18 @@ enroll_photos/
 *.onnx
 *.engine
 
-# Phase 3 / 4 runtime
+# Phase 3 / 4 / 5 runtime
 phase3_identity/logs/
 phase3_identity/gallery.db
+phase3_identity/gallery_chroma/
 phase4_events/logs/
 phase4_events/events.db
 phase4_events/snapshots/
+phase5_dashboard/logs/
 *.db
 *.db-wal
 *.db-shm
+chroma.sqlite3
 
 # Editors / OS
 .vscode/

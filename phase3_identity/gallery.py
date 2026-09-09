@@ -1,34 +1,27 @@
-"""Employee gallery: SQLite for metadata + embeddings, an in-memory matrix for
-fast cosine k-NN. This is the local stand-in for PostgreSQL + pgvector, which
-arrives with the backend in Phase 4/5. MVP gallery size is <= 50 (acceptance
-doc S2.3), so a plain matrix multiply is ample.
+"""Employee gallery backed by ChromaDB (embedded, persistent).
+
+Chroma stores the 512-d ArcFace embeddings and the employee metadata, and does
+the cosine nearest-neighbour search. This replaces the earlier SQLite + in-memory
+matrix; the public interface (``match`` / ``list`` / ``upsert`` / ``disable``) is
+unchanged so nothing else in Phase 3/4 needed to move.
+
+Embedded ``PersistentClient`` is single-process. The pipeline and the enrolment
+CLI use it; the dashboard/API reads employees from a mirror table in the events
+DB instead of opening Chroma a second time. For true multi-process use, run
+``chroma run --path <dir>`` and point ``GALLERY_CHROMA_URL`` at it.
 """
 from __future__ import annotations
 
-import sqlite3
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS employees (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    code         TEXT UNIQUE NOT NULL,
-    name         TEXT NOT NULL,
-    department   TEXT,
-    status       TEXT NOT NULL DEFAULT 'active',
-    created_at   REAL NOT NULL,
-    n_images     INTEGER NOT NULL DEFAULT 0,
-    embedding    BLOB NOT NULL          -- float32[512], L2-normalised mean of enrolment embeddings
-);
-"""
-
 
 @dataclass
 class Employee:
-    id: int
     code: str
     name: str
     department: str | None
@@ -42,84 +35,95 @@ class Match:
     score: float
 
 
+def _emp(code: str, md: dict) -> Employee:
+    return Employee(
+        code=code,
+        name=md.get("name", code),
+        department=(md.get("department") or None),
+        status=md.get("status", "active"),
+        n_images=int(md.get("n_images", 0)),
+    )
+
+
 class EmployeeGallery:
-    def __init__(self, db_path: str | Path) -> None:
-        self.path = Path(db_path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.path), check_same_thread=False)
-        self.conn.execute(_SCHEMA)
-        self.conn.commit()
-        self._ids: list[int] = []
-        self._meta: dict[int, Employee] = {}
-        self._matrix = np.zeros((0, 512), dtype=np.float32)
-        self.reload()
+    COLLECTION = "employees"
+
+    def __init__(self, location: str | Path) -> None:
+        import chromadb
+        from chromadb.config import Settings
+
+        url = os.getenv("GALLERY_CHROMA_URL")
+        if url:  # host:port of a `chroma run` server
+            host, _, port = url.partition(":")
+            self.client = chromadb.HttpClient(host=host or "localhost", port=int(port or 8000))
+        else:
+            path = Path(location)
+            path.mkdir(parents=True, exist_ok=True)
+            self.client = chromadb.PersistentClient(
+                path=str(path),
+                settings=Settings(anonymized_telemetry=False),
+            )
+        self.coll = self.client.get_or_create_collection(
+            name=self.COLLECTION, metadata={"hnsw:space": "cosine"}
+        )
 
     # ------------------------------------------------------------------ read
-    def reload(self) -> None:
-        rows = self.conn.execute(
-            "SELECT id, code, name, department, status, n_images, embedding "
-            "FROM employees WHERE status = 'active'"
-        ).fetchall()
-        self._ids = [r[0] for r in rows]
-        self._meta = {
-            r[0]: Employee(r[0], r[1], r[2], r[3], r[4], r[5]) for r in rows
-        }
-        if rows:
-            self._matrix = np.stack(
-                [np.frombuffer(r[6], dtype=np.float32) for r in rows]
-            )
-        else:
-            self._matrix = np.zeros((0, 512), dtype=np.float32)
+    def reload(self) -> None:  # kept for API compatibility; Chroma is always fresh
+        pass
 
     def __len__(self) -> int:
-        return len(self._ids)
+        return len(self.list())
 
     def list(self) -> list[Employee]:
-        return list(self._meta.values())
+        got = self.coll.get(where={"status": "active"})
+        return [_emp(c, m) for c, m in zip(got["ids"], got["metadatas"])]
 
     # --------------------------------------------------------------- matching
     def match(self, embedding: np.ndarray) -> Match | None:
-        """Top-1 cosine match, or None if the gallery is empty."""
-        if self._matrix.shape[0] == 0:
+        if self.coll.count() == 0:
             return None
-        sims = self._matrix @ embedding.astype(np.float32)
-        i = int(np.argmax(sims))
-        return Match(self._meta[self._ids[i]], float(sims[i]))
+        res = self.coll.query(
+            query_embeddings=[np.asarray(embedding, dtype=np.float32).tolist()],
+            n_results=1,
+            where={"status": "active"},
+        )
+        ids = res["ids"][0]
+        if not ids:
+            return None
+        distance = float(res["distances"][0][0])       # cosine distance, 0..2
+        md = res["metadatas"][0][0]
+        return Match(_emp(ids[0], md), 1.0 - distance)  # -> cosine similarity
 
     # ----------------------------------------------------------------- write
     def upsert(self, code: str, name: str, department: str | None,
-               embedding: np.ndarray, n_images: int) -> int:
-        emb = embedding.astype(np.float32)
+               embedding: np.ndarray, n_images: int) -> str:
+        emb = np.asarray(embedding, dtype=np.float32)
         emb = emb / (np.linalg.norm(emb) + 1e-9)
-        blob = emb.tobytes()
-        now = time.time()
-        cur = self.conn.execute("SELECT id FROM employees WHERE code = ?", (code,))
-        row = cur.fetchone()
-        if row:
-            self.conn.execute(
-                "UPDATE employees SET name=?, department=?, embedding=?, n_images=?, status='active' "
-                "WHERE code=?",
-                (name, department, blob, n_images, code),
-            )
-            emp_id = row[0]
-        else:
-            cur = self.conn.execute(
-                "INSERT INTO employees (code, name, department, status, created_at, n_images, embedding) "
-                "VALUES (?, ?, ?, 'active', ?, ?, ?)",
-                (code, name, department, now, n_images, blob),
-            )
-            emp_id = int(cur.lastrowid)
-        self.conn.commit()
-        self.reload()
-        return emp_id
+        existing = self.coll.get(ids=[code])
+        created_at = (existing["metadatas"][0].get("created_at")
+                      if existing["ids"] else None) or time.time()
+        self.coll.upsert(
+            ids=[code],
+            embeddings=[emb.tolist()],
+            metadatas=[{
+                "name": name,
+                "department": department or "",
+                "status": "active",
+                "n_images": int(n_images),
+                "created_at": float(created_at),
+                "updated_at": time.time(),
+            }],
+        )
+        return code
 
     def disable(self, code: str) -> bool:
-        cur = self.conn.execute(
-            "UPDATE employees SET status='disabled' WHERE code=?", (code,)
-        )
-        self.conn.commit()
-        self.reload()
-        return cur.rowcount > 0
+        got = self.coll.get(ids=[code])
+        if not got["ids"]:
+            return False
+        md = dict(got["metadatas"][0])
+        md["status"] = "disabled"
+        self.coll.update(ids=[code], metadatas=[md])
+        return True
 
-    def close(self) -> None:
-        self.conn.close()
+    def close(self) -> None:  # PersistentClient has no explicit close
+        pass

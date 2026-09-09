@@ -1,0 +1,10 @@
+# Phase 5 - dashboard. On top of Phases 1-4.
+#
+# ChromaDB replaces the Phase 3 SQLite gallery for vector search. Its dependency
+# resolver installs CPU `onnxruntime`, which shadows onnxruntime-gpu - after
+# installing chromadb, restore the GPU build:
+#   pip uninstall -y onnxruntime
+#   pip install --force-reinstall --no-deps onnxruntime-gpu==1.20.2
+chromadb>=1.0
+fastapi>=0.110
+uvicorn[standard]>=0.29

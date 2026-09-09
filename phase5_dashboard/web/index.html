@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reality Connector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="dot" id="live-dot" title="pipeline status"></span>
+    <b>REALITY CONNECTOR</b>
+    <span class="sub" id="cam-label">cam-1</span>
+  </div>
+  <div class="clock" id="clock">--:--:--</div>
+</header>
+
+<section class="tiles" id="tiles">
+  <div class="tile"><div class="k" id="t-employees">–</div><div class="l">Employees</div></div>
+  <div class="tile good"><div class="k" id="t-recognized">–</div><div class="l">Recognized · today</div></div>
+  <div class="tile crit"><div class="k" id="t-unknown">–</div><div class="l">Unknown · today</div></div>
+  <div class="tile"><div class="k" id="t-events">–</div><div class="l">Events · today</div></div>
+  <div class="tile warn"><div class="k" id="t-alerts">–</div><div class="l">Open alerts</div></div>
+  <div class="tile"><div class="k" id="t-fps">–</div><div class="l">Processing fps</div></div>
+</section>
+
+<main>
+  <section class="panel live">
+    <div class="panel-head"><span>Live</span><span class="mono" id="live-meta"></span></div>
+    <div class="video-wrap">
+      <img id="live-img" alt="live view" src="live.mjpg">
+    </div>
+  </section>
+
+  <section class="panel feed">
+    <div class="panel-head">
+      <span>Events</span>
+      <div class="filters">
+        <select id="f-status">
+          <option value="">all</option>
+          <option value="RECOGNIZED">recognized</option>
+          <option value="UNKNOWN">unknown</option>
+          <option value="UNVERIFIED">unverified</option>
+        </select>
+        <select id="f-alert">
+          <option value="">any alert</option>
+          <option value="open">open</option>
+          <option value="ack">ack</option>
+          <option value="closed">closed</option>
+        </select>
+        <input id="f-q" type="search" placeholder="name / code">
+      </div>
+    </div>
+    <div class="event-list" id="event-list"></div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-card">
+    <button class="close" id="modal-close">✕</button>
+    <img id="modal-img" alt="evidence">
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

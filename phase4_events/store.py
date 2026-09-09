@@ -32,6 +32,16 @@ CREATE INDEX IF NOT EXISTS idx_events_ts       ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_events_status   ON events(identity_status);
 CREATE INDEX IF NOT EXISTS idx_events_camera   ON events(camera_id);
 CREATE INDEX IF NOT EXISTS idx_events_alert    ON events(alert_status);
+
+-- read-only mirror of the Chroma gallery, so the API never opens Chroma itself
+CREATE TABLE IF NOT EXISTS employees (
+    code        TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    department  TEXT,
+    status      TEXT NOT NULL DEFAULT 'active',
+    n_images    INTEGER NOT NULL DEFAULT 0,
+    synced_at   REAL NOT NULL
+);
 """
 
 
@@ -143,6 +153,23 @@ class EventStore:
             "unverified": by_status.get("UNVERIFIED", 0),
             "open_alerts": open_alerts,
         }
+
+    # ------------------------------------------------------------- employees
+    def sync_employees(self, employees: list[dict]) -> None:
+        now = time.time()
+        with self.conn:
+            self.conn.execute("DELETE FROM employees")
+            self.conn.executemany(
+                "INSERT INTO employees (code, name, department, status, n_images, synced_at) "
+                "VALUES (:code, :name, :department, :status, :n_images, :synced_at)",
+                [{**e, "synced_at": now} for e in employees],
+            )
+
+    def list_employees(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT code, name, department, status, n_images FROM employees ORDER BY name"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def close(self) -> None:
         self.conn.close()

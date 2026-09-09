@@ -23,13 +23,11 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from phase3_identity.gallery import EmployeeGallery
 from .config import Phase4Config
 from .store import EventStore
 
 cfg = Phase4Config.load()
 store = EventStore(cfg.events_db)
-gallery = EmployeeGallery(cfg.phase3.gallery_db)
 
 app = FastAPI(title="Reality Connector - Events API", version="0.1.0")
 
@@ -56,7 +54,7 @@ def _window_start(window: str) -> float:
 @app.get("/healthz")
 def healthz() -> dict:
     return {"ok": True, "db": str(cfg.events_db), "max_event_id": store.max_id(),
-            "gallery": len(gallery)}
+            "gallery": len(store.list_employees())}
 
 
 @app.get("/stats")
@@ -114,13 +112,8 @@ def set_alert(event_id: int, body: AlertUpdate) -> dict:
 
 @app.get("/employees")
 def employees() -> dict:
-    gallery.reload()
-    return {"count": len(gallery),
-            "employees": [
-                {"code": e.code, "name": e.name, "department": e.department,
-                 "status": e.status, "n_images": e.n_images}
-                for e in gallery.list()
-            ]}
+    rows = store.list_employees()
+    return {"count": len(rows), "employees": rows}
 
 
 @app.websocket("/ws/events")

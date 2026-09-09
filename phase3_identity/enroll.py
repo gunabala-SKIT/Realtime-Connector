@@ -93,10 +93,27 @@ def main(argv=None) -> int:
         log.warning("enrolment images look inconsistent (min sim to mean %.2f) - "
                     "check they are all the same person", min(sims))
 
-    emp_id = gallery.upsert(args.code, args.name, args.dept, mean, len(embeddings))
-    log.info("Enrolled '%s' (%s) id=%d from %d image(s). Gallery now has %d employee(s).",
-             args.name, args.code, emp_id, len(embeddings), len(gallery))
+    gallery.upsert(args.code, args.name, args.dept, mean, len(embeddings))
+    log.info("Enrolled '%s' (%s) from %d image(s). Gallery now has %d employee(s).",
+             args.name, args.code, len(embeddings), len(gallery))
     gallery.close()
+
+    # keep the dashboard/API's employee mirror in sync (best-effort)
+    try:
+        from phase4_events.config import Phase4Config
+        from phase4_events.store import EventStore
+        p4 = Phase4Config.load(args.env)
+        if Path(p4.events_db).exists():
+            store = EventStore(p4.events_db)
+            store.sync_employees([
+                {"code": e.code, "name": e.name, "department": e.department,
+                 "status": e.status, "n_images": e.n_images}
+                for e in EmployeeGallery(cfg.gallery_db).list()
+            ])
+            store.close()
+            log.info("Synced employee list to %s", p4.events_db)
+    except Exception as e:  # noqa: BLE001
+        log.debug("employee mirror sync skipped: %s", e)
     return 0
 
 
