@@ -1,0 +1,4 @@
+# Phase 4 - on top of Phases 1-3.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27          # for the test client / smoke checks

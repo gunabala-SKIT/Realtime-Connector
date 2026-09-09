@@ -25,10 +25,15 @@ scratch/
 *.onnx
 *.engine
 
-# Phase 3 runtime
+# Phase 3 / 4 runtime
 phase3_identity/logs/
 phase3_identity/gallery.db
+phase4_events/logs/
+phase4_events/events.db
+phase4_events/snapshots/
 *.db
+*.db-wal
+*.db-shm
 
 # Editors / OS
 .vscode/
