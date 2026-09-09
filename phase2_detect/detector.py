@@ -50,6 +50,10 @@ class PersonTracker:
             self.device, cfg.tracker, cfg.imgsz, cfg.conf, cfg.classes,
         )
 
+        # ultralytics 8.4 warns on every call if `half=` is passed at all; only
+        # pass it when actually enabling FP16.
+        self._extra = {"half": True} if cfg.half else {}
+
         self._frame_i = 0
         self._last: list[Track] = []
         self._infer_ms = 0.0
@@ -83,7 +87,7 @@ class PersonTracker:
         the model sees before BoT-SORT filters/associates it."""
         r = self.model.predict(
             frame, classes=self.cfg.classes, conf=self.cfg.conf, iou=self.cfg.iou,
-            imgsz=self.cfg.imgsz, device=self.device, half=self.cfg.half, verbose=False,
+            imgsz=self.cfg.imgsz, device=self.device, verbose=False, **self._extra,
         )[0]
         out: list[Track] = []
         b = getattr(r, "boxes", None)
@@ -113,8 +117,8 @@ class PersonTracker:
             iou=self.cfg.iou,
             imgsz=self.cfg.imgsz,
             device=self.device,
-            half=self.cfg.half,
             verbose=False,
+            **self._extra,
         )
         self._infer_ms = (time.perf_counter() - t0) * 1000.0
 
