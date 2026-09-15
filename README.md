@@ -13,7 +13,8 @@ See `Reality_Connector_MVP_Acceptance_Criteria_v0.1.docx` for measurable MVP tar
 | **Phase 4** | Deduplicated event engine + snapshots + FastAPI REST/WebSocket backend | Done — [`phase4_events/`](phase4_events/README.md) |
 | **Phase 5** | Web dashboard (live video + events + stats + alerts) · ChromaDB vector store | Done — [`phase5_dashboard/`](phase5_dashboard/README.md) |
 | **Phase 6** | Rule engine (identity/camera/time conditions) + alerts + email notifications | Done — [`phase6_rules/`](phase6_rules/README.md) |
-| Phase 7+ | Zones, multi-camera, production hardening | Not started |
+| **Phase 7** | Zones — draw regions, tag events, add a zone condition to rules | Done — [`phase7_zones/`](phase7_zones/README.md) |
+| Phase 8+ | Multi-camera, production hardening | Not started |
 
 ```bash
 python -m phase5_dashboard      # everything, at http://127.0.0.1:8000

@@ -139,7 +139,8 @@ class VisionPipeline:
                 self.resolver.update(person.track_id, q_face)
 
             self.resolver.prune(live_ids)
-            new_events = self.engine.observe(self.resolver.tracks, live_ids, frame)
+            positions = {p.track_id: (p.x1, p.y1, p.x2, p.y2) for p in people if p.track_id is not None}
+            new_events = self.engine.observe(self.resolver.tracks, live_ids, frame, positions)
             for hook in self.event_hooks:
                 try:
                     hook(new_events)
@@ -163,6 +164,10 @@ class VisionPipeline:
     def latest_frame(self):
         with self._lock:
             return self._frame
+
+    def latest_jpeg(self) -> bytes | None:
+        with self._lock:
+            return self._jpeg
 
     def status(self) -> dict:
         f = self._frame

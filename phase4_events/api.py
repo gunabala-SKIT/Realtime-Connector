@@ -13,7 +13,7 @@ Endpoints
   POST /events/{id}/alert  {"status": "none|open|ack|closed"}   (quick-glance flag on the event)
   GET  /employees                      -> enrolled gallery
 
-  GET    /rules                        -> configured rules (Phase 6)
+  GET    /rules                        -> configured rules (Phase 6), each may set "zone"
   POST   /rules                        -> create a rule
   PATCH  /rules/{id}                   -> update fields (e.g. {"enabled": false})
   DELETE /rules/{id}
@@ -21,7 +21,12 @@ Endpoints
   GET    /alerts/{id}
   POST   /alerts/{id}   {"status"?, "assigned_to"?, "comment"?} -> ack/close/assign/annotate
 
-  WS   /ws/events                      -> pushes new events (with alert info) as JSON, ~1 s
+  GET    /zones?camera_id=             -> configured zones (Phase 7)
+  POST   /zones                        -> create {camera_id, name, points: [[x,y]..], color?}
+  PATCH  /zones/{id}
+  DELETE /zones/{id}
+
+  WS   /ws/events                      -> pushes new events (with alert info + zone) as JSON, ~1 s
   WS   /ws/alerts                      -> pushes new alerts as JSON, ~1 s
 """
 from __future__ import annotations
@@ -148,6 +153,7 @@ class RuleIn(BaseModel):
     time_start: str | None = None        # "HH:MM"
     time_end: str | None = None          # "HH:MM"
     days_of_week: str | None = None      # "0,1,2,3,4,5,6" Mon=0, or None = every day
+    zone: str | None = None              # zone name (Phase 7), None = any
     priority: str = "high"               # low | medium | high | critical
     notify_email: bool = False
     cooldown_s: float = 120
@@ -162,6 +168,7 @@ class RulePatch(BaseModel):
     time_start: str | None = None
     time_end: str | None = None
     days_of_week: str | None = None
+    zone: str | None = None
     priority: str | None = None
     notify_email: bool | None = None
     cooldown_s: float | None = None
@@ -203,6 +210,54 @@ def delete_rule(rule_id: int) -> dict:
     if not store.delete_rule(rule_id):
         raise HTTPException(404, "rule not found")
     return {"deleted": rule_id}
+
+
+# ---------------------------------------------------------------------- zones
+class ZoneIn(BaseModel):
+    camera_id: str
+    name: str
+    points: list[list[float]]     # >= 3 [x, y] pairs, each 0..1
+    color: str = "#3ccfd7"
+    enabled: bool = True
+
+
+class ZonePatch(BaseModel):
+    name: str | None = None
+    points: list[list[float]] | None = None
+    color: str | None = None
+    enabled: bool | None = None
+
+
+@app.get("/zones")
+def list_zones(camera_id: str | None = None) -> dict:
+    rows = store.list_zones(camera_id=camera_id)
+    return {"count": len(rows), "zones": [z.to_dict() for z in rows]}
+
+
+@app.post("/zones")
+def create_zone(body: ZoneIn) -> dict:
+    if len(body.points) < 3:
+        raise HTTPException(422, "a zone needs at least 3 points")
+    zone = store.add_zone(**body.model_dump())
+    return zone.to_dict()
+
+
+@app.patch("/zones/{zone_id}")
+def patch_zone(zone_id: int, body: ZonePatch) -> dict:
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "points" in fields and len(fields["points"]) < 3:
+        raise HTTPException(422, "a zone needs at least 3 points")
+    zone = store.update_zone(zone_id, **fields)
+    if not zone:
+        raise HTTPException(404, "zone not found")
+    return zone.to_dict()
+
+
+@app.delete("/zones/{zone_id}")
+def delete_zone(zone_id: int) -> dict:
+    if not store.delete_zone(zone_id):
+        raise HTTPException(404, "zone not found")
+    return {"deleted": zone_id}
 
 
 # --------------------------------------------------------------------- alerts

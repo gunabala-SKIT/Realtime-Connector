@@ -6,6 +6,7 @@ so a later rename or delete never rewrites history.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from dataclasses import asdict, dataclass
@@ -79,6 +80,20 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
 CREATE INDEX IF NOT EXISTS idx_alerts_event  ON alerts(event_id);
+
+-- Phase 7: zones (BRD FR-019). Points are normalised [0,1] fractions of the
+-- frame, so a zone stays valid regardless of the stream's actual resolution.
+CREATE TABLE IF NOT EXISTS zones (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    camera_id   TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    points      TEXT NOT NULL,               -- JSON [[x,y], ...], >= 3 points
+    color       TEXT NOT NULL DEFAULT '#3ccfd7',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_zones_camera ON zones(camera_id);
 """
 
 
@@ -113,9 +128,25 @@ class Rule:
     time_start: str | None
     time_end: str | None
     days_of_week: str | None
+    zone: str | None
     priority: str
     notify_email: bool
     cooldown_s: float
+    created_at: float
+    updated_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class Zone:
+    id: int | None
+    camera_id: str
+    name: str
+    points: list          # [[x, y], ...] normalised 0..1
+    color: str
+    enabled: bool
     created_at: float
     updated_at: float
 
@@ -154,6 +185,13 @@ class EventStore:
         self.conn.execute("PRAGMA busy_timeout=4000")
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
+        self._ensure_column("rules", "zone", "TEXT")  # added in Phase 7, migrate older DBs
+
+    def _ensure_column(self, table: str, col: str, coltype: str) -> None:
+        cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+            self.conn.commit()
 
     # ------------------------------------------------------------------ write
     def insert(self, ev: Event) -> Event:
@@ -256,18 +294,65 @@ class EventStore:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # ------------------------------------------------------------------ zones
+    def add_zone(self, *, camera_id: str, name: str, points: list,
+                 color: str = "#3ccfd7", enabled: bool = True) -> Zone:
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO zones (camera_id, name, points, color, enabled, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (camera_id, name, json.dumps(points), color, int(enabled), now, now),
+        )
+        self.conn.commit()
+        return self.get_zone(int(cur.lastrowid))
+
+    def get_zone(self, zone_id: int) -> Zone | None:
+        row = self.conn.execute("SELECT * FROM zones WHERE id=?", (zone_id,)).fetchone()
+        return _row_to_zone(row) if row else None
+
+    def list_zones(self, *, camera_id: str | None = None, enabled_only: bool = False) -> list[Zone]:
+        where, params = [], []
+        if camera_id:
+            where.append("camera_id = ?"); params.append(camera_id)
+        if enabled_only:
+            where.append("enabled = 1")
+        sql = "SELECT * FROM zones"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id"
+        return [_row_to_zone(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def update_zone(self, zone_id: int, **fields) -> Zone | None:
+        if not fields:
+            return self.get_zone(zone_id)
+        fields = dict(fields)
+        if "points" in fields:
+            fields["points"] = json.dumps(fields["points"])
+        if "enabled" in fields:
+            fields["enabled"] = int(fields["enabled"])
+        cols = ", ".join(f"{k}=?" for k in fields)
+        self.conn.execute(f"UPDATE zones SET {cols}, updated_at=? WHERE id=?",
+                          [*fields.values(), time.time(), zone_id])
+        self.conn.commit()
+        return self.get_zone(zone_id)
+
+    def delete_zone(self, zone_id: int) -> bool:
+        cur = self.conn.execute("DELETE FROM zones WHERE id=?", (zone_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
     # ----------------------------------------------------------------- rules
     def add_rule(self, *, name: str, identity_status: str | None, camera_id: str | None,
                  time_start: str | None, time_end: str | None, days_of_week: str | None,
                  priority: str, notify_email: bool, cooldown_s: float,
-                 enabled: bool = True) -> Rule:
+                 zone: str | None = None, enabled: bool = True) -> Rule:
         now = time.time()
         cur = self.conn.execute(
             "INSERT INTO rules (name, enabled, identity_status, camera_id, time_start, time_end, "
-            "days_of_week, priority, notify_email, cooldown_s, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "days_of_week, zone, priority, notify_email, cooldown_s, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, int(enabled), identity_status, camera_id, time_start, time_end,
-             days_of_week, priority, int(notify_email), cooldown_s, now, now),
+             days_of_week, zone, priority, int(notify_email), cooldown_s, now, now),
         )
         self.conn.commit()
         return self.get_rule(int(cur.lastrowid))
@@ -384,3 +469,10 @@ def _row_to_rule(row: sqlite3.Row) -> Rule:
 
 def _row_to_alert(row: sqlite3.Row) -> Alert:
     return Alert(**{k: row[k] for k in row.keys()})
+
+
+def _row_to_zone(row: sqlite3.Row) -> Zone:
+    d = {k: row[k] for k in row.keys()}
+    d["points"] = json.loads(d["points"])
+    d["enabled"] = bool(d["enabled"])
+    return Zone(**d)

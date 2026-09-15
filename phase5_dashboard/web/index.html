@@ -17,6 +17,7 @@
     <span class="sub" id="cam-label">cam-1</span>
   </div>
   <div class="header-right">
+    <button class="btn" id="zones-btn">▱ Zones</button>
     <button class="btn" id="rules-btn">⚙ Rules</button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
@@ -90,6 +91,9 @@
         </select>
       </label>
       <label>Camera<input name="camera_id" placeholder="any"></label>
+      <label>Zone
+        <select name="zone"><option value="">any</option></select>
+      </label>
       <label>From<input name="time_start" type="time" placeholder="any"></label>
       <label>To<input name="time_end" type="time" placeholder="any"></label>
       <label>Priority
@@ -104,6 +108,29 @@
       <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
       <button type="submit" class="btn primary">Add rule</button>
     </form>
+  </div>
+</div>
+
+<div class="modal" id="zones-modal" hidden>
+  <div class="modal-card zones-card">
+    <button class="close" id="zones-close">✕</button>
+    <h2>Zones</h2>
+    <p class="hint">Click the frame to add points (need 3+), then name it and
+      <b>Finish &amp; save</b>. Rules can then match "person in zone X" (BRD §15).</p>
+    <div class="zone-canvas-wrap">
+      <img id="zone-bg" alt="camera frame">
+      <canvas id="zone-canvas"></canvas>
+    </div>
+    <div class="zone-controls">
+      <input id="zone-name" placeholder="zone name" maxlength="40">
+      <input id="zone-color" type="color" value="#3ccfd7" title="zone colour">
+      <button type="button" class="btn" id="zone-undo">undo point</button>
+      <button type="button" class="btn" id="zone-cancel">clear</button>
+      <button type="button" class="btn" id="zone-refresh">↻ refresh frame</button>
+      <button type="button" class="btn primary" id="zone-finish">Finish &amp; save</button>
+    </div>
+    <h3>Existing zones</h3>
+    <div id="zones-list" class="rules-list"></div>
   </div>
 </div>
 

@@ -35,10 +35,17 @@ class EventEngine:
         self._emitted: dict[int, dict[str, float]] = {}   # track_id -> {status: last_seen}
         self.count = 0
 
-    def observe(self, track_identities: dict, live_ids: set[int], frame) -> list[Event]:
-        """Call once per processed frame with the current TrackIdentity objects."""
+        # Set by Phase 7 (phase5_dashboard/server.py) without Phase 4 needing to
+        # know about zones: resolve(camera_id, bbox, frame_w, frame_h) -> str | None
+        self.zone_resolver = None
+
+    def observe(self, track_identities: dict, live_ids: set[int], frame,
+                positions: dict[int, tuple[int, int, int, int]] | None = None) -> list[Event]:
+        """Call once per processed frame with the current TrackIdentity objects
+        and (optionally) each live track's bounding box, for zone tagging."""
         now = time.time()
         new_events: list[Event] = []
+        h, w = frame.shape[:2]
 
         for tid, ti in track_identities.items():
             if tid not in live_ids:
@@ -53,12 +60,19 @@ class EventEngine:
                 seen[status] = now
                 continue
             seen[status] = now
-            new_events.append(self._emit(tid, ti, frame, now))
+
+            zone = None
+            if self.zone_resolver is not None and positions and tid in positions:
+                try:
+                    zone = self.zone_resolver(self.cfg.camera_id, positions[tid], w, h)
+                except Exception:  # noqa: BLE001 - zone tagging must never break events
+                    self.log.exception("zone_resolver failed")
+            new_events.append(self._emit(tid, ti, frame, now, zone))
 
         self._prune(live_ids, now)
         return new_events
 
-    def _emit(self, track_id: int, ti, frame, ts: float) -> Event:
+    def _emit(self, track_id: int, ti, frame, ts: float, zone: str | None = None) -> Event:
         uid = uuid.uuid4().hex
         snap_rel = None
         try:
@@ -77,7 +91,7 @@ class EventEngine:
             employee_code=ti.employee_code,
             employee_name=ti.employee_name,
             confidence=round(ti.score, 4) if ti.state is IdentityState.RECOGNIZED else round(ti.best_score, 4),
-            zone=None,
+            zone=zone,
             snapshot=snap_rel,
             alert_status="none",
             created_at=time.time(),
@@ -85,9 +99,9 @@ class EventEngine:
         ev = self.store.insert(ev)
         self.count += 1
         who = ev.employee_name or ev.identity_status
-        self.log.info("event #%d  %s  cam=%s track=%d  %s  conf=%.2f  -> %s",
+        self.log.info("event #%d  %s  cam=%s track=%d  %s  zone=%s  conf=%.2f  -> %s",
                       ev.id, ev.event_type, ev.camera_id, ev.track_id, who,
-                      ev.confidence or 0.0, ev.snapshot or "(no snapshot)")
+                      ev.zone or "-", ev.confidence or 0.0, ev.snapshot or "(no snapshot)")
         return ev
 
     def _save_snapshot(self, uid: str, ti, frame, ts: float) -> str:

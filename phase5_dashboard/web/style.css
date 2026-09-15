@@ -149,6 +149,20 @@ input[type=search] { width: 130px; }
 .rule-form .checkbox { flex-direction: row; align-items: center; gap: 6px; }
 .rule-form button { grid-column: 1 / -1; justify-self: start; margin-top: 4px; }
 
+.zones-card { max-width: 760px; }
+.zone-canvas-wrap {
+  position: relative; background: #000; border-radius: 8px; overflow: hidden;
+  line-height: 0; margin-top: 6px;
+}
+.zone-canvas-wrap img { width: 100%; display: block; }
+.zone-canvas-wrap canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+.zone-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 4px; }
+.zone-controls input[type=text], .zone-controls input:not([type]) {
+  padding: 6px 8px; flex: 1; min-width: 140px;
+}
+#zone-name { padding: 6px 8px; flex: 1; min-width: 140px; }
+#zone-color { padding: 0; width: 34px; height: 30px; border-radius: 6px; border: 1px solid var(--hairline); background: none; }
+
 @media (max-width: 1000px) {
   .tiles { grid-template-columns: repeat(3, 1fr); }
   main { grid-template-columns: 1fr; }

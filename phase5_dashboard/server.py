@@ -4,8 +4,9 @@ One process: runs the vision pipeline in a background thread AND serves
 
   /                     the dashboard SPA (phase5_dashboard/web/)
   /live.mjpg            annotated live video (multipart/x-mixed-replace)
+  /live/frame.jpg       one current frame as a still JPEG (background for the zone editor)
   /live/status          pipeline status JSON (fps, counts, uptime)
-  /api/*                the Phase 4 events API (events, stats, snapshots, alerts, /ws/events)
+  /api/*                the Phase 4 events API (events, stats, snapshots, alerts, rules, zones)
 
     python -m phase5_dashboard            # then open http://127.0.0.1:8000
 """
@@ -16,8 +17,8 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from phase1_camera.logger import get_logger
@@ -25,6 +26,7 @@ from phase4_events.api import app as events_app
 from phase4_events.pipeline import VisionPipeline
 from phase6_rules.config import Phase6Config
 from phase6_rules.rules import RuleEngine
+from phase7_zones.index import ZoneIndex
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -36,6 +38,9 @@ rule_engine = RuleEngine(cfg6, pipeline.store, log)
 pipeline.event_hooks.append(rule_engine.process_events)
 if not cfg6.email_configured:
     log.info("SMTP not configured - alert emails disabled (set SMTP_HOST + ALERT_EMAIL_TO to enable).")
+
+zone_index = ZoneIndex(pipeline.store)
+pipeline.engine.zone_resolver = zone_index.resolve
 
 
 @asynccontextmanager
@@ -58,6 +63,15 @@ def live_mjpg() -> StreamingResponse:
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@app.get("/live/frame.jpg")
+def live_frame() -> Response:
+    jpg = pipeline.latest_jpeg()
+    if jpg is None:
+        raise HTTPException(503, "no frame yet - still warming up")
+    return Response(content=jpg, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/live/status")

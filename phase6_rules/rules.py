@@ -26,6 +26,7 @@ _DEFAULT_RULE = dict(
     time_start=None,
     time_end=None,
     days_of_week=None,
+    zone=None,
     priority="high",
     notify_email=False,
     cooldown_s=120,
@@ -83,6 +84,8 @@ class RuleEngine:
         if rule.identity_status and rule.identity_status != ev.identity_status:
             return False
         if rule.camera_id and rule.camera_id != ev.camera_id:
+            return False
+        if rule.zone and rule.zone not in (ev.zone or "").split(","):
             return False
         if not self._time_matches(rule, ev.ts):
             return False
