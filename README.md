@@ -11,8 +11,9 @@ See `Reality_Connector_MVP_Acceptance_Criteria_v0.1.docx` for measurable MVP tar
 | **Phase 2** | YOLO11 person detection + BoT-SORT tracking, threaded low-latency capture | Done — [`phase2_detect/`](phase2_detect/README.md) |
 | **Phase 3** | SCRFD face detection + ArcFace recognition + enrollment + RECOGNIZED/UNKNOWN/UNVERIFIED identity states | Done — [`phase3_identity/`](phase3_identity/README.md) |
 | **Phase 4** | Deduplicated event engine + snapshots + FastAPI REST/WebSocket backend | Done — [`phase4_events/`](phase4_events/README.md) |
-| **Phase 5** | Web dashboard (live video + events + stats + alerts) · ChromaDB vector store | In progress — [`phase5_dashboard/`](phase5_dashboard/README.md) |
-| Phase 6+ | Rule engine, zones, richer alerting, multi-camera | Not started |
+| **Phase 5** | Web dashboard (live video + events + stats + alerts) · ChromaDB vector store | Done — [`phase5_dashboard/`](phase5_dashboard/README.md) |
+| **Phase 6** | Rule engine (identity/camera/time conditions) + alerts + email notifications | Done — [`phase6_rules/`](phase6_rules/README.md) |
+| Phase 7+ | Zones, multi-camera, production hardening | Not started |
 
 ```bash
 python -m phase5_dashboard      # everything, at http://127.0.0.1:8000

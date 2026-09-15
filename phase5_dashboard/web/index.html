@@ -16,7 +16,10 @@
     <b>REALITY CONNECTOR</b>
     <span class="sub" id="cam-label">cam-1</span>
   </div>
-  <div class="clock" id="clock">--:--:--</div>
+  <div class="header-right">
+    <button class="btn" id="rules-btn">⚙ Rules</button>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
 </header>
 
 <section class="tiles" id="tiles">
@@ -64,6 +67,43 @@
     <button class="close" id="modal-close">✕</button>
     <img id="modal-img" alt="evidence">
     <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="modal" id="rules-modal" hidden>
+  <div class="modal-card rules-card">
+    <button class="close" id="rules-close">✕</button>
+    <h2>Rules</h2>
+    <p class="hint">A rule fires when <b>every</b> condition it sets matches an event. Leave a
+      condition blank to mean "any". First match wins per (rule, track) at most once per cooldown.</p>
+    <div id="rules-list" class="rules-list"></div>
+
+    <h3>Add rule</h3>
+    <form id="rule-form" class="rule-form">
+      <label>Name<input name="name" required placeholder="e.g. Unknown after hours"></label>
+      <label>Identity
+        <select name="identity_status">
+          <option value="">any</option>
+          <option value="UNKNOWN">UNKNOWN</option>
+          <option value="RECOGNIZED">RECOGNIZED</option>
+          <option value="UNVERIFIED">UNVERIFIED</option>
+        </select>
+      </label>
+      <label>Camera<input name="camera_id" placeholder="any"></label>
+      <label>From<input name="time_start" type="time" placeholder="any"></label>
+      <label>To<input name="time_end" type="time" placeholder="any"></label>
+      <label>Priority
+        <select name="priority">
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high" selected>high</option>
+          <option value="critical">critical</option>
+        </select>
+      </label>
+      <label>Cooldown (s)<input name="cooldown_s" type="number" value="120" min="0"></label>
+      <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
+      <button type="submit" class="btn primary">Add rule</button>
+    </form>
   </div>
 </div>
 

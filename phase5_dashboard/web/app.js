@@ -20,6 +20,8 @@ function eventRow(e) {
     ? `<div class="alertbtns" data-id="${e.id}">
          <button data-act="ack">ack</button><button data-act="closed">close</button></div>`
     : (e.alert_status !== "none" ? `<span class="conf">${esc(e.alert_status)}</span>` : "");
+  const prio = e.alert_priority
+    ? `<span class="prio prio-${e.alert_priority}">${e.alert_priority}</span>` : "";
   return `<div class="event" data-id="${e.id}">
     <img loading="lazy" src="${snap}" onerror="this.style.visibility='hidden'">
     <div>
@@ -28,6 +30,7 @@ function eventRow(e) {
     </div>
     <div class="right">
       <span class="badge ${e.identity_status}">${e.identity_status}</span>
+      ${prio}
       <span class="conf">${conf}</span>
       ${alert}
     </div>
@@ -128,6 +131,74 @@ async function setAlert(id, status) {
   renderEvents();
   refreshStats();
 }
+
+// ---------------------------------------------------------------- rules
+function condSummary(r) {
+  const parts = [];
+  parts.push(r.identity_status || "any identity");
+  parts.push(r.camera_id ? `cam=${r.camera_id}` : "any camera");
+  if (r.time_start && r.time_end) parts.push(`${r.time_start}–${r.time_end}`);
+  parts.push(`cooldown ${r.cooldown_s}s`);
+  if (r.notify_email) parts.push("email");
+  return parts.join("  ·  ");
+}
+
+function ruleRow(r) {
+  return `<div class="rule-row" data-id="${r.id}">
+    <div>
+      <div class="name">${esc(r.name)} <span class="prio prio-${r.priority}">${r.priority}</span></div>
+      <div class="cond">${condSummary(r)}</div>
+    </div>
+    <label title="enabled"><input type="checkbox" class="toggle" ${r.enabled ? "checked" : ""}></label>
+    <button data-act="delete">delete</button>
+  </div>`;
+}
+
+async function loadRules() {
+  const d = await getJSON(`${API}/rules`);
+  $("#rules-list").innerHTML = d.rules.length
+    ? d.rules.map(ruleRow).join("")
+    : `<p class="hint">No rules yet - nothing will raise an alert.</p>`;
+}
+
+$("#rules-btn").addEventListener("click", () => { $("#rules-modal").hidden = false; loadRules(); });
+$("#rules-close").addEventListener("click", () => ($("#rules-modal").hidden = true));
+$("#rules-modal").addEventListener("click", (e) => { if (e.target.id === "rules-modal") $("#rules-modal").hidden = true; });
+
+$("#rules-list").addEventListener("click", async (e) => {
+  const row = e.target.closest(".rule-row");
+  if (!row) return;
+  const id = row.dataset.id;
+  if (e.target.matches(".toggle")) {
+    await fetch(`${API}/rules/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: e.target.checked }),
+    });
+  } else if (e.target.dataset.act === "delete") {
+    await fetch(`${API}/rules/${id}`, { method: "DELETE" });
+    loadRules();
+  }
+});
+
+$("#rule-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = {
+    name: f.get("name"),
+    identity_status: f.get("identity_status") || null,
+    camera_id: f.get("camera_id") || null,
+    time_start: f.get("time_start") || null,
+    time_end: f.get("time_end") || null,
+    priority: f.get("priority"),
+    cooldown_s: Number(f.get("cooldown_s")) || 0,
+    notify_email: f.get("notify_email") === "on",
+  };
+  const r = await fetch(`${API}/rules`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (r.ok) { e.target.reset(); loadRules(); }
+  else console.warn("add rule failed", await r.text());
+});
 
 // ---------------------------------------------------------------- wire-up
 $("#event-list").addEventListener("click", (ev) => {

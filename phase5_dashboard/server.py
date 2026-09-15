@@ -22,14 +22,20 @@ from fastapi.staticfiles import StaticFiles
 
 from phase1_camera.logger import get_logger
 from phase4_events.api import app as events_app
-from phase4_events.config import Phase4Config
 from phase4_events.pipeline import VisionPipeline
+from phase6_rules.config import Phase6Config
+from phase6_rules.rules import RuleEngine
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
-cfg = Phase4Config.load()
+cfg6 = Phase6Config.load()
+cfg = cfg6.phase4
 log = get_logger("reality_connector.phase5", cfg.phase3.log_level, str(cfg.phase3.log_dir))
 pipeline = VisionPipeline(cfg, log)
+rule_engine = RuleEngine(cfg6, pipeline.store, log)
+pipeline.event_hooks.append(rule_engine.process_events)
+if not cfg6.email_configured:
+    log.info("SMTP not configured - alert emails disabled (set SMTP_HOST + ALERT_EMAIL_TO to enable).")
 
 
 @asynccontextmanager

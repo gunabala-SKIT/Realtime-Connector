@@ -67,6 +67,10 @@ class VisionPipeline:
         self.person_ms = self.face_ms = 0.0
         self.started_at = 0.0
 
+        # Called with the list of newly-written Events after each frame (Phase 6
+        # wires the rule engine in here without Phase 4 needing to know about it).
+        self.event_hooks: list = []
+
     # --------------------------------------------------------------- control
     def start(self) -> None:
         self.log.info("Warming up models ...")
@@ -135,7 +139,12 @@ class VisionPipeline:
                 self.resolver.update(person.track_id, q_face)
 
             self.resolver.prune(live_ids)
-            self.engine.observe(self.resolver.tracks, live_ids, frame)
+            new_events = self.engine.observe(self.resolver.tracks, live_ids, frame)
+            for hook in self.event_hooks:
+                try:
+                    hook(new_events)
+                except Exception:  # noqa: BLE001 - a hook must never break the vision loop
+                    self.log.exception("event hook failed")
             self._rate.tick()
 
             draw_people(frame, people, self.resolver.tracks, dets, self.status())

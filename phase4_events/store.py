@@ -42,6 +42,43 @@ CREATE TABLE IF NOT EXISTS employees (
     n_images    INTEGER NOT NULL DEFAULT 0,
     synced_at   REAL NOT NULL
 );
+
+-- Phase 6: user-configurable rules (BRD FR-018/FR-020, S15)
+CREATE TABLE IF NOT EXISTS rules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    identity_status TEXT,                       -- NULL = any; else RECOGNIZED|UNKNOWN|UNVERIFIED
+    camera_id       TEXT,                       -- NULL = any
+    time_start      TEXT,                       -- "HH:MM" or NULL = any time
+    time_end        TEXT,                       -- "HH:MM"; if < time_start, window wraps midnight
+    days_of_week    TEXT,                       -- "0,1,2,..6" (Mon=0) or NULL = every day
+    priority        TEXT NOT NULL DEFAULT 'high', -- low | medium | high | critical
+    notify_email    INTEGER NOT NULL DEFAULT 0,
+    cooldown_s      REAL NOT NULL DEFAULT 120,  -- suppress repeat alerts for the same rule+track
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+
+-- Phase 6: alerts raised by rule matches (BRD S20 Alert entity, FR-014)
+CREATE TABLE IF NOT EXISTS alerts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_uid       TEXT UNIQUE NOT NULL,
+    event_id        INTEGER NOT NULL,
+    rule_id         INTEGER,
+    rule_name       TEXT,
+    camera_id       TEXT NOT NULL,
+    identity_status TEXT NOT NULL,
+    employee_name   TEXT,
+    priority        TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open', -- open | ack | closed
+    assigned_to     TEXT,
+    comment         TEXT,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+CREATE INDEX IF NOT EXISTS idx_alerts_event  ON alerts(event_id);
 """
 
 
@@ -61,6 +98,47 @@ class Event:
     snapshot: str | None
     alert_status: str
     created_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class Rule:
+    id: int | None
+    name: str
+    enabled: bool
+    identity_status: str | None
+    camera_id: str | None
+    time_start: str | None
+    time_end: str | None
+    days_of_week: str | None
+    priority: str
+    notify_email: bool
+    cooldown_s: float
+    created_at: float
+    updated_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class Alert:
+    id: int | None
+    alert_uid: str
+    event_id: int
+    rule_id: int | None
+    rule_name: str | None
+    camera_id: str
+    identity_status: str
+    employee_name: str | None
+    priority: str
+    status: str
+    assigned_to: str | None
+    comment: str | None
+    created_at: float
+    updated_at: float
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -91,10 +169,17 @@ class EventStore:
         return ev
 
     def set_alert_status(self, event_id: int, status: str) -> bool:
-        cur = self.conn.execute(
-            "UPDATE events SET alert_status=? WHERE id=?", (status, event_id)
-        )
-        self.conn.commit()
+        """Set an event's quick-glance alert flag, and keep any linked alerts row(s)
+        (created by the rule engine) in sync with it."""
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE events SET alert_status=? WHERE id=?", (status, event_id)
+            )
+            if status in ("ack", "closed"):
+                self.conn.execute(
+                    "UPDATE alerts SET status=?, updated_at=? WHERE event_id=? AND status != 'closed'",
+                    (status, time.time(), event_id),
+                )
         return cur.rowcount > 0
 
     # ------------------------------------------------------------------- read
@@ -143,7 +228,7 @@ class EventStore:
             "SELECT COUNT(*) AS n FROM events WHERE ts >= ?", (since,)
         ).fetchone()["n"]
         open_alerts = self.conn.execute(
-            "SELECT COUNT(*) AS n FROM events WHERE alert_status='open'"
+            "SELECT COUNT(*) AS n FROM alerts WHERE status='open'"
         ).fetchone()["n"]
         return {
             "since": since,
@@ -171,9 +256,131 @@ class EventStore:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # ----------------------------------------------------------------- rules
+    def add_rule(self, *, name: str, identity_status: str | None, camera_id: str | None,
+                 time_start: str | None, time_end: str | None, days_of_week: str | None,
+                 priority: str, notify_email: bool, cooldown_s: float,
+                 enabled: bool = True) -> Rule:
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO rules (name, enabled, identity_status, camera_id, time_start, time_end, "
+            "days_of_week, priority, notify_email, cooldown_s, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (name, int(enabled), identity_status, camera_id, time_start, time_end,
+             days_of_week, priority, int(notify_email), cooldown_s, now, now),
+        )
+        self.conn.commit()
+        return self.get_rule(int(cur.lastrowid))
+
+    def get_rule(self, rule_id: int) -> Rule | None:
+        row = self.conn.execute("SELECT * FROM rules WHERE id=?", (rule_id,)).fetchone()
+        return _row_to_rule(row) if row else None
+
+    def list_rules(self, *, enabled_only: bool = False) -> list[Rule]:
+        sql = "SELECT * FROM rules"
+        if enabled_only:
+            sql += " WHERE enabled=1"
+        sql += " ORDER BY id"
+        return [_row_to_rule(r) for r in self.conn.execute(sql).fetchall()]
+
+    def update_rule(self, rule_id: int, **fields) -> Rule | None:
+        if not fields:
+            return self.get_rule(rule_id)
+        cols = ", ".join(f"{k}=?" for k in fields)
+        vals = list(fields.values())
+        if "enabled" in fields:
+            i = list(fields.keys()).index("enabled")
+            vals[i] = int(vals[i])
+        if "notify_email" in fields:
+            i = list(fields.keys()).index("notify_email")
+            vals[i] = int(vals[i])
+        self.conn.execute(f"UPDATE rules SET {cols}, updated_at=? WHERE id=?",
+                          [*vals, time.time(), rule_id])
+        self.conn.commit()
+        return self.get_rule(rule_id)
+
+    def delete_rule(self, rule_id: int) -> bool:
+        cur = self.conn.execute("DELETE FROM rules WHERE id=?", (rule_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    # ---------------------------------------------------------------- alerts
+    def create_alert(self, event: Event, rule: Rule) -> Alert:
+        import uuid
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO alerts (alert_uid, event_id, rule_id, rule_name, camera_id, "
+            "identity_status, employee_name, priority, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (uuid.uuid4().hex, event.id, rule.id, rule.name, event.camera_id,
+             event.identity_status, event.employee_name, rule.priority, "open", now, now),
+        )
+        with self.conn:
+            self.conn.execute("UPDATE events SET alert_status='open' WHERE id=?", (event.id,))
+        self.conn.commit()
+        return self.get_alert(int(cur.lastrowid))
+
+    def get_alert(self, alert_id: int) -> Alert | None:
+        row = self.conn.execute("SELECT * FROM alerts WHERE id=?", (alert_id,)).fetchone()
+        return _row_to_alert(row) if row else None
+
+    def list_alerts(self, *, status: str | None = None, priority: str | None = None,
+                     limit: int = 100, offset: int = 0) -> list[Alert]:
+        where, params = [], []
+        if status:
+            where.append("status = ?"); params.append(status)
+        if priority:
+            where.append("priority = ?"); params.append(priority)
+        sql = "SELECT * FROM alerts"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+        params += [max(1, min(limit, 1000)), max(0, offset)]
+        return [_row_to_alert(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def update_alert(self, alert_id: int, **fields) -> Alert | None:
+        if not fields:
+            return self.get_alert(alert_id)
+        alert = self.get_alert(alert_id)
+        if not alert:
+            return None
+        cols = ", ".join(f"{k}=?" for k in fields)
+        with self.conn:
+            self.conn.execute(f"UPDATE alerts SET {cols}, updated_at=? WHERE id=?",
+                              [*fields.values(), time.time(), alert_id])
+            if "status" in fields:
+                self.conn.execute("UPDATE events SET alert_status=? WHERE id=?",
+                                  (fields["status"], alert.event_id))
+        return self.get_alert(alert_id)
+
+    def get_alerts_for_events(self, event_ids: list[int]) -> dict[int, Alert]:
+        """Latest alert per event id, for enriching an /events listing."""
+        if not event_ids:
+            return {}
+        qmarks = ",".join("?" * len(event_ids))
+        rows = self.conn.execute(
+            f"SELECT * FROM alerts WHERE event_id IN ({qmarks}) ORDER BY id DESC", event_ids
+        ).fetchall()
+        out: dict[int, Alert] = {}
+        for r in rows:
+            a = _row_to_alert(r)
+            out.setdefault(a.event_id, a)  # first hit per event_id = most recent (DESC)
+        return out
+
     def close(self) -> None:
         self.conn.close()
 
 
 def _row_to_event(row: sqlite3.Row) -> Event:
     return Event(**{k: row[k] for k in row.keys()})
+
+
+def _row_to_rule(row: sqlite3.Row) -> Rule:
+    d = {k: row[k] for k in row.keys()}
+    d["enabled"] = bool(d["enabled"])
+    d["notify_email"] = bool(d["notify_email"])
+    return Rule(**d)
+
+
+def _row_to_alert(row: sqlite3.Row) -> Alert:
+    return Alert(**{k: row[k] for k in row.keys()})

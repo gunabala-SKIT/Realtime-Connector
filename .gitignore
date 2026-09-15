@@ -35,6 +35,7 @@ phase4_events/logs/
 phase4_events/events.db
 phase4_events/snapshots/
 phase5_dashboard/logs/
+phase6_rules/logs/
 *.db
 *.db-wal
 *.db-shm
