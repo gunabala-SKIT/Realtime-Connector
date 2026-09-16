@@ -81,12 +81,15 @@ async function loadEvents() {
 
 async function refreshStats() {
   try {
-    const [stats, emp, live] = await Promise.all([
+    const [stats, emp, live, shelves] = await Promise.all([
       getJSON(`${API}/stats?window=today`),
       getJSON(`${API}/employees`),
       getJSON(`live/status`),
+      getJSON(`${API}/shelves/summary`).catch(() => ({ shelves: [] })),
     ]);
     setTiles(stats, emp, live);
+    const low = shelves.shelves.filter((s) => s.last_check && s.last_check.pct_full <= s.low_stock_threshold);
+    $("#t-shelves-low").textContent = shelves.shelves.length ? low.length : "–";
   } catch (e) { console.warn(e); }
 }
 
@@ -310,6 +313,102 @@ $("#zones-list").addEventListener("click", async (e) => {
   if (!row || e.target.dataset.act !== "delete") return;
   await fetch(`${API}/zones/${row.dataset.id}`, { method: "DELETE" });
   loadZonesList();
+});
+
+// ---------------------------------------------------------------- shelves
+function stockColor(pct, threshold) {
+  if (pct <= threshold * 0.5) return "var(--crit)";
+  if (pct <= threshold) return "var(--warn)";
+  return "var(--good)";
+}
+
+function shelfRow(s) {
+  const chk = s.last_check;
+  const pct = chk ? chk.pct_full : null;
+  const bar = pct != null
+    ? `<div><div class="stockbar"><i style="width:${Math.min(100, pct * 100)}%;background:${stockColor(pct, s.low_stock_threshold)}"></i></div>
+         <div class="stockpct">${chk.detected_count}/${s.capacity} · ${(pct * 100).toFixed(0)}%</div></div>`
+    : `<div class="stockpct">no checks yet</div>`;
+  return `<div class="shelf-row" data-id="${s.id}">
+    <div>
+      <div class="name">${esc(s.name)}</div>
+      <div class="cond">${esc(s.camera_id)}${s.product_name ? " · " + esc(s.product_name) : ""} · restock &le; ${(s.low_stock_threshold * 100).toFixed(0)}%</div>
+    </div>
+    ${bar}
+    <button data-act="delete">delete</button>
+  </div>`;
+}
+
+async function loadShelves() {
+  const d = await getJSON(`${API}/shelves/summary`);
+  $("#shelves-list").innerHTML = d.shelves.length
+    ? d.shelves.map(shelfRow).join("")
+    : `<p class="hint">No shelves yet - add one below.</p>`;
+}
+
+function shelfAlertRow(a) {
+  const btns = a.status === "open"
+    ? `<div class="alertbtns" data-id="${a.id}"><button data-act="ack">ack</button><button data-act="closed">close</button></div>`
+    : `<span class="conf">${esc(a.status)}</span>`;
+  return `<div class="rule-row" data-id="${a.id}">
+    <div>
+      <div class="name">${esc(a.shelf_name)} <span class="prio prio-high">restock</span></div>
+      <div class="cond">${a.detected_count}/${a.capacity} · ${(a.pct_full * 100).toFixed(0)}% · ${fmtTime(a.created_at)}</div>
+    </div>
+    ${btns}
+  </div>`;
+}
+
+async function loadShelfAlerts() {
+  const d = await getJSON(`${API}/shelf-alerts?status=open`);
+  $("#shelf-alerts-list").innerHTML = d.alerts.length
+    ? d.alerts.map(shelfAlertRow).join("")
+    : `<p class="hint">No open restock alerts.</p>`;
+}
+
+$("#shelves-btn").addEventListener("click", () => {
+  $("#shelves-modal").hidden = false;
+  loadShelves();
+  loadShelfAlerts();
+});
+$("#shelves-close").addEventListener("click", () => ($("#shelves-modal").hidden = true));
+$("#shelves-modal").addEventListener("click", (e) => { if (e.target.id === "shelves-modal") $("#shelves-modal").hidden = true; });
+
+$("#shelves-list").addEventListener("click", async (e) => {
+  const row = e.target.closest(".shelf-row");
+  if (!row || e.target.dataset.act !== "delete") return;
+  await fetch(`${API}/shelves/${row.dataset.id}`, { method: "DELETE" });
+  loadShelves();
+});
+
+$("#shelf-alerts-list").addEventListener("click", async (e) => {
+  const btns = e.target.closest(".alertbtns");
+  if (!btns) return;
+  await fetch(`${API}/shelf-alerts/${btns.dataset.id}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: e.target.dataset.act }),
+  });
+  loadShelfAlerts();
+  refreshStats();
+});
+
+$("#shelf-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const body = {
+    name: f.get("name"),
+    camera_id: f.get("camera_id"),
+    product_name: f.get("product_name") || null,
+    capacity: Number(f.get("capacity")),
+    low_stock_threshold: Number(f.get("low_stock_threshold_pct")) / 100,
+    cooldown_s: Number(f.get("cooldown_s")) || 0,
+    notify_email: f.get("notify_email") === "on",
+  };
+  const r = await fetch(`${API}/shelves`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (r.ok) { e.target.reset(); loadShelves(); }
+  else alert("Could not add shelf: " + (await r.text()));
 });
 
 // ---------------------------------------------------------------- wire-up

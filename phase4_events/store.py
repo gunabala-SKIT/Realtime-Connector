@@ -94,6 +94,57 @@ CREATE TABLE IF NOT EXISTS zones (
     updated_at  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_zones_camera ON zones(camera_id);
+
+-- Phase 8: shelf / inventory monitoring (BRD S8 Retail: shelf monitoring).
+-- A shelf is a counting region (same normalised-points idea as a zone) with
+-- an expected full count and a restock threshold - independent of `zones`,
+-- which is about *people* standing somewhere, not *objects* stocked somewhere.
+CREATE TABLE IF NOT EXISTS shelves (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    camera_id           TEXT NOT NULL,
+    name                TEXT NOT NULL,             -- e.g. "Aisle 3 - Coke 500ml"
+    points              TEXT NOT NULL,             -- JSON [[x,y], ...] normalised 0..1
+    product_name        TEXT,
+    capacity            INTEGER NOT NULL,          -- expected count when fully stocked
+    low_stock_threshold REAL NOT NULL DEFAULT 0.7, -- alert when detected/capacity <= this
+    notify_email        INTEGER NOT NULL DEFAULT 0,
+    cooldown_s          REAL NOT NULL DEFAULT 1800,
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    created_at          REAL NOT NULL,
+    updated_at          REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shelves_camera ON shelves(camera_id);
+
+CREATE TABLE IF NOT EXISTS shelf_checks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    shelf_id        INTEGER NOT NULL,
+    camera_id       TEXT NOT NULL,
+    ts              REAL NOT NULL,
+    detected_count  INTEGER NOT NULL,
+    capacity        INTEGER NOT NULL,
+    pct_full        REAL NOT NULL,
+    snapshot        TEXT,
+    created_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shelf_checks_shelf ON shelf_checks(shelf_id, id);
+
+CREATE TABLE IF NOT EXISTS shelf_alerts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_uid       TEXT UNIQUE NOT NULL,
+    shelf_check_id  INTEGER NOT NULL,
+    shelf_id        INTEGER NOT NULL,
+    shelf_name      TEXT NOT NULL,
+    camera_id       TEXT NOT NULL,
+    detected_count  INTEGER NOT NULL,
+    capacity        INTEGER NOT NULL,
+    pct_full        REAL NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',  -- open | ack | closed
+    assigned_to     TEXT,
+    comment         TEXT,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shelf_alerts_status ON shelf_alerts(status);
 """
 
 
@@ -147,6 +198,62 @@ class Zone:
     points: list          # [[x, y], ...] normalised 0..1
     color: str
     enabled: bool
+    created_at: float
+    updated_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class Shelf:
+    id: int | None
+    camera_id: str
+    name: str
+    points: list           # [[x, y], ...] normalised 0..1
+    product_name: str | None
+    capacity: int
+    low_stock_threshold: float
+    notify_email: bool
+    cooldown_s: float
+    enabled: bool
+    created_at: float
+    updated_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class ShelfCheck:
+    id: int | None
+    shelf_id: int
+    camera_id: str
+    ts: float
+    detected_count: int
+    capacity: int
+    pct_full: float
+    snapshot: str | None
+    created_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class ShelfAlert:
+    id: int | None
+    alert_uid: str
+    shelf_check_id: int
+    shelf_id: int
+    shelf_name: str
+    camera_id: str
+    detected_count: int
+    capacity: int
+    pct_full: float
+    status: str
+    assigned_to: str | None
+    comment: str | None
     created_at: float
     updated_at: float
 
@@ -341,6 +448,122 @@ class EventStore:
         self.conn.commit()
         return cur.rowcount > 0
 
+    # ----------------------------------------------------------------- shelves
+    def add_shelf(self, *, camera_id: str, name: str, points: list, capacity: int,
+                  product_name: str | None = None, low_stock_threshold: float = 0.7,
+                  notify_email: bool = False, cooldown_s: float = 1800,
+                  enabled: bool = True) -> Shelf:
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO shelves (camera_id, name, points, product_name, capacity, "
+            "low_stock_threshold, notify_email, cooldown_s, enabled, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (camera_id, name, json.dumps(points), product_name, capacity, low_stock_threshold,
+             int(notify_email), cooldown_s, int(enabled), now, now),
+        )
+        self.conn.commit()
+        return self.get_shelf(int(cur.lastrowid))
+
+    def get_shelf(self, shelf_id: int) -> Shelf | None:
+        row = self.conn.execute("SELECT * FROM shelves WHERE id=?", (shelf_id,)).fetchone()
+        return _row_to_shelf(row) if row else None
+
+    def list_shelves(self, *, camera_id: str | None = None, enabled_only: bool = False) -> list[Shelf]:
+        where, params = [], []
+        if camera_id:
+            where.append("camera_id = ?"); params.append(camera_id)
+        if enabled_only:
+            where.append("enabled = 1")
+        sql = "SELECT * FROM shelves"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id"
+        return [_row_to_shelf(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def update_shelf(self, shelf_id: int, **fields) -> Shelf | None:
+        if not fields:
+            return self.get_shelf(shelf_id)
+        fields = dict(fields)
+        if "points" in fields:
+            fields["points"] = json.dumps(fields["points"])
+        if "enabled" in fields:
+            fields["enabled"] = int(fields["enabled"])
+        if "notify_email" in fields:
+            fields["notify_email"] = int(fields["notify_email"])
+        cols = ", ".join(f"{k}=?" for k in fields)
+        self.conn.execute(f"UPDATE shelves SET {cols}, updated_at=? WHERE id=?",
+                          [*fields.values(), time.time(), shelf_id])
+        self.conn.commit()
+        return self.get_shelf(shelf_id)
+
+    def delete_shelf(self, shelf_id: int) -> bool:
+        cur = self.conn.execute("DELETE FROM shelves WHERE id=?", (shelf_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    # ----------------------------------------------------------- shelf checks
+    def add_shelf_check(self, *, shelf_id: int, camera_id: str, ts: float, detected_count: int,
+                        capacity: int, pct_full: float, snapshot: str | None) -> ShelfCheck:
+        cur = self.conn.execute(
+            "INSERT INTO shelf_checks (shelf_id, camera_id, ts, detected_count, capacity, "
+            "pct_full, snapshot, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (shelf_id, camera_id, ts, detected_count, capacity, pct_full, snapshot, time.time()),
+        )
+        self.conn.commit()
+        row = self.conn.execute("SELECT * FROM shelf_checks WHERE id=?", (cur.lastrowid,)).fetchone()
+        return _row_to_shelf_check(row)
+
+    def list_shelf_checks(self, *, shelf_id: int | None = None, limit: int = 100) -> list[ShelfCheck]:
+        sql = "SELECT * FROM shelf_checks"
+        params: list = []
+        if shelf_id is not None:
+            sql += " WHERE shelf_id = ?"; params.append(shelf_id)
+        sql += " ORDER BY id DESC LIMIT ?"; params.append(max(1, min(limit, 1000)))
+        return [_row_to_shelf_check(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def latest_shelf_checks(self) -> dict[int, ShelfCheck]:
+        """Most recent check per shelf_id, for a dashboard summary."""
+        rows = self.conn.execute(
+            "SELECT * FROM shelf_checks WHERE id IN "
+            "(SELECT MAX(id) FROM shelf_checks GROUP BY shelf_id)"
+        ).fetchall()
+        return {r["shelf_id"]: _row_to_shelf_check(r) for r in rows}
+
+    # ----------------------------------------------------------- shelf alerts
+    def create_shelf_alert(self, check: ShelfCheck, shelf: Shelf) -> ShelfAlert:
+        import uuid
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO shelf_alerts (alert_uid, shelf_check_id, shelf_id, shelf_name, camera_id, "
+            "detected_count, capacity, pct_full, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (uuid.uuid4().hex, check.id, shelf.id, shelf.name, shelf.camera_id,
+             check.detected_count, check.capacity, check.pct_full, "open", now, now),
+        )
+        self.conn.commit()
+        return self.get_shelf_alert(int(cur.lastrowid))
+
+    def get_shelf_alert(self, alert_id: int) -> ShelfAlert | None:
+        row = self.conn.execute("SELECT * FROM shelf_alerts WHERE id=?", (alert_id,)).fetchone()
+        return _row_to_shelf_alert(row) if row else None
+
+    def list_shelf_alerts(self, *, status: str | None = None, limit: int = 100) -> list[ShelfAlert]:
+        sql = "SELECT * FROM shelf_alerts"
+        params: list = []
+        if status:
+            sql += " WHERE status = ?"; params.append(status)
+        sql += " ORDER BY id DESC LIMIT ?"; params.append(max(1, min(limit, 1000)))
+        return [_row_to_shelf_alert(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def update_shelf_alert(self, alert_id: int, **fields) -> ShelfAlert | None:
+        if not fields:
+            return self.get_shelf_alert(alert_id)
+        cols = ", ".join(f"{k}=?" for k in fields)
+        self.conn.execute(f"UPDATE shelf_alerts SET {cols}, updated_at=? WHERE id=?",
+                          [*fields.values(), time.time(), alert_id])
+        self.conn.commit()
+        return self.get_shelf_alert(alert_id)
+
     # ----------------------------------------------------------------- rules
     def add_rule(self, *, name: str, identity_status: str | None, camera_id: str | None,
                  time_start: str | None, time_end: str | None, days_of_week: str | None,
@@ -476,3 +699,19 @@ def _row_to_zone(row: sqlite3.Row) -> Zone:
     d["points"] = json.loads(d["points"])
     d["enabled"] = bool(d["enabled"])
     return Zone(**d)
+
+
+def _row_to_shelf(row: sqlite3.Row) -> Shelf:
+    d = {k: row[k] for k in row.keys()}
+    d["points"] = json.loads(d["points"])
+    d["enabled"] = bool(d["enabled"])
+    d["notify_email"] = bool(d["notify_email"])
+    return Shelf(**d)
+
+
+def _row_to_shelf_check(row: sqlite3.Row) -> ShelfCheck:
+    return ShelfCheck(**{k: row[k] for k in row.keys()})
+
+
+def _row_to_shelf_alert(row: sqlite3.Row) -> ShelfAlert:
+    return ShelfAlert(**{k: row[k] for k in row.keys()})

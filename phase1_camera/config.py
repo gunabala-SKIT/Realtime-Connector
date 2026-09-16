@@ -82,36 +82,49 @@ class Config:
     log_dir: Path
 
     @classmethod
-    def load(cls, env_file: str | os.PathLike | None = None) -> "Config":
+    def load(cls, env_file: str | os.PathLike | None = None, prefix: str = "") -> "Config":
+        """Load one camera's settings. Pass ``prefix="SHELF_"`` (say) to load a
+        *second*, independent camera from ``SHELF_CAMERA_IP`` / ``SHELF_RTSP_URL``
+        / etc. instead of the plain names - e.g. for Phase 8's dedicated shelf
+        camera, without disturbing the main camera's config at all."""
         load_dotenv(env_file or (BASE_DIR / ".env"))
 
-        log_dir = Path(_get("LOG_DIR", "logs"))
+        def g(name: str, default: str | None = None) -> str | None:
+            return _get(f"{prefix}{name}", default)
+
+        def gi(name: str, default: int) -> int:
+            return _get_int(f"{prefix}{name}", default)
+
+        def gf(name: str, default: float) -> float:
+            return _get_float(f"{prefix}{name}", default)
+
+        log_dir = Path(g("LOG_DIR", "logs"))
         if not log_dir.is_absolute():
             log_dir = BASE_DIR / log_dir
 
-        transport = (_get("RTSP_TRANSPORT", "tcp") or "tcp").lower()
+        transport = (g("RTSP_TRANSPORT", "tcp") or "tcp").lower()
         if transport not in ("tcp", "udp"):
             transport = "tcp"
 
         return cls(
-            camera_ip=_get("CAMERA_IP", "") or "",
-            rtsp_port=_get_int("RTSP_PORT", 554),
-            camera_user=_get("CAMERA_USER", "") or "",
-            camera_password=_get("CAMERA_PASSWORD", "") or "",
-            camera_channel=_get("CAMERA_CHANNEL", "101") or "101",
-            rtsp_path_template=_get("CAMERA_RTSP_PATH", "/Streaming/Channels/{channel}"),
-            rtsp_url_override=_get("RTSP_URL"),
-            camera_source=_get("CAMERA_SOURCE"),
+            camera_ip=g("CAMERA_IP", "") or "",
+            rtsp_port=gi("RTSP_PORT", 554),
+            camera_user=g("CAMERA_USER", "") or "",
+            camera_password=g("CAMERA_PASSWORD", "") or "",
+            camera_channel=g("CAMERA_CHANNEL", "101") or "101",
+            rtsp_path_template=g("CAMERA_RTSP_PATH", "/Streaming/Channels/{channel}"),
+            rtsp_url_override=g("RTSP_URL"),
+            camera_source=g("CAMERA_SOURCE"),
             rtsp_transport=transport,
-            open_timeout_ms=_get_int("OPEN_TIMEOUT_MS", 8000),
-            read_retry_limit=_get_int("READ_RETRY_LIMIT", 5),
-            reconnect_wait_seconds=_get_float("RECONNECT_WAIT_SECONDS", 3.0),
-            reconnect_max_attempts=_get_int("RECONNECT_MAX_ATTEMPTS", 0),
-            startup_max_attempts=max(1, _get_int("STARTUP_MAX_ATTEMPTS", 3)),
-            target_fps=_get_float("TARGET_FPS", 0.0),
-            capture_buffer=_parse_opt_int(_get("CAPTURE_BUFFER")),
-            ffmpeg_loglevel=_get("FFMPEG_LOGLEVEL"),
-            log_level=(_get("LOG_LEVEL", "INFO") or "INFO").upper(),
+            open_timeout_ms=gi("OPEN_TIMEOUT_MS", 8000),
+            read_retry_limit=gi("READ_RETRY_LIMIT", 5),
+            reconnect_wait_seconds=gf("RECONNECT_WAIT_SECONDS", 3.0),
+            reconnect_max_attempts=gi("RECONNECT_MAX_ATTEMPTS", 0),
+            startup_max_attempts=max(1, gi("STARTUP_MAX_ATTEMPTS", 3)),
+            target_fps=gf("TARGET_FPS", 0.0),
+            capture_buffer=_parse_opt_int(g("CAPTURE_BUFFER")),
+            ffmpeg_loglevel=g("FFMPEG_LOGLEVEL"),
+            log_level=(g("LOG_LEVEL", "INFO") or "INFO").upper(),
             log_dir=log_dir,
         )
 

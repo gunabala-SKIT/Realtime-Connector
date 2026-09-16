@@ -26,6 +26,16 @@ Endpoints
   PATCH  /zones/{id}
   DELETE /zones/{id}
 
+  GET    /shelves?camera_id=           -> configured shelves (Phase 8)
+  POST   /shelves    {camera_id, name, points, capacity, product_name?, low_stock_threshold?, ...}
+  PATCH  /shelves/{id}
+  DELETE /shelves/{id}
+  GET    /shelves/summary              -> latest check per shelf, for a dashboard tile
+  GET    /shelf-checks?shelf_id=&limit=
+  GET    /shelf-checks/{id}/snapshot   -> image/jpeg
+  GET    /shelf-alerts?status=
+  POST   /shelf-alerts/{id}   {"status"?, "assigned_to"?, "comment"?}
+
   WS   /ws/events                      -> pushes new events (with alert info + zone) as JSON, ~1 s
   WS   /ws/alerts                      -> pushes new alerts as JSON, ~1 s
 """
@@ -258,6 +268,123 @@ def delete_zone(zone_id: int) -> dict:
     if not store.delete_zone(zone_id):
         raise HTTPException(404, "zone not found")
     return {"deleted": zone_id}
+
+
+# --------------------------------------------------------------------- shelves
+_WHOLE_FRAME = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+
+
+class ShelfIn(BaseModel):
+    camera_id: str
+    name: str
+    points: list[list[float]] | None = None   # >= 3 [x,y] pairs 0..1; default = whole frame
+    capacity: int
+    product_name: str | None = None
+    low_stock_threshold: float = 0.7  # alert when detected/capacity <= this
+    notify_email: bool = False
+    cooldown_s: float = 1800
+    enabled: bool = True
+
+
+class ShelfPatch(BaseModel):
+    name: str | None = None
+    points: list[list[float]] | None = None
+    capacity: int | None = None
+    product_name: str | None = None
+    low_stock_threshold: float | None = None
+    notify_email: bool | None = None
+    cooldown_s: float | None = None
+    enabled: bool | None = None
+
+
+@app.get("/shelves")
+def list_shelves(camera_id: str | None = None) -> dict:
+    rows = store.list_shelves(camera_id=camera_id)
+    return {"count": len(rows), "shelves": [s.to_dict() for s in rows]}
+
+
+@app.get("/shelves/summary")
+def shelves_summary() -> dict:
+    shelves = store.list_shelves()
+    latest = store.latest_shelf_checks()
+    out = []
+    for sh in shelves:
+        chk = latest.get(sh.id)
+        out.append({
+            **sh.to_dict(),
+            "last_check": chk.to_dict() if chk else None,
+        })
+    return {"count": len(out), "shelves": out}
+
+
+@app.post("/shelves")
+def create_shelf(body: ShelfIn) -> dict:
+    points = body.points or _WHOLE_FRAME
+    if len(points) < 3:
+        raise HTTPException(422, "a shelf region needs at least 3 points")
+    if body.capacity < 1:
+        raise HTTPException(422, "capacity must be >= 1")
+    fields = body.model_dump()
+    fields["points"] = points
+    shelf = store.add_shelf(**fields)
+    return shelf.to_dict()
+
+
+@app.patch("/shelves/{shelf_id}")
+def patch_shelf(shelf_id: int, body: ShelfPatch) -> dict:
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    shelf = store.update_shelf(shelf_id, **fields)
+    if not shelf:
+        raise HTTPException(404, "shelf not found")
+    return shelf.to_dict()
+
+
+@app.delete("/shelves/{shelf_id}")
+def delete_shelf(shelf_id: int) -> dict:
+    if not store.delete_shelf(shelf_id):
+        raise HTTPException(404, "shelf not found")
+    return {"deleted": shelf_id}
+
+
+@app.get("/shelf-checks")
+def list_shelf_checks(shelf_id: int | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
+    rows = store.list_shelf_checks(shelf_id=shelf_id, limit=limit)
+    return {"count": len(rows), "checks": [c.to_dict() for c in rows]}
+
+
+@app.get("/shelf-checks/{check_id}/snapshot")
+def shelf_check_snapshot(check_id: int):
+    rows = store.list_shelf_checks(limit=1000)
+    check = next((c for c in rows if c.id == check_id), None)
+    if not check or not check.snapshot:
+        raise HTTPException(404, "no snapshot for this check")
+    path = Path(cfg.snapshot_dir) / check.snapshot
+    if not path.is_file():
+        raise HTTPException(404, "snapshot file missing")
+    return FileResponse(str(path), media_type="image/jpeg")
+
+
+@app.get("/shelf-alerts")
+def list_shelf_alerts(status: str | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
+    rows = store.list_shelf_alerts(status=status, limit=limit)
+    return {"count": len(rows), "alerts": [a.to_dict() for a in rows]}
+
+
+class ShelfAlertPatch(BaseModel):
+    status: str | None = None
+    assigned_to: str | None = None
+    comment: str | None = None
+
+
+@app.post("/shelf-alerts/{alert_id}")
+def update_shelf_alert(alert_id: int, body: ShelfAlertPatch) -> dict:
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "status" in fields and fields["status"] not in ("open", "ack", "closed"):
+        raise HTTPException(422, "status must be open|ack|closed")
+    a = store.update_shelf_alert(alert_id, **fields)
+    if not a:
+        raise HTTPException(404, "shelf alert not found")
+    return a.to_dict()
 
 
 # --------------------------------------------------------------------- alerts

@@ -17,6 +17,7 @@
     <span class="sub" id="cam-label">cam-1</span>
   </div>
   <div class="header-right">
+    <button class="btn" id="shelves-btn">▥ Shelves</button>
     <button class="btn" id="zones-btn">▱ Zones</button>
     <button class="btn" id="rules-btn">⚙ Rules</button>
     <div class="clock" id="clock">--:--:--</div>
@@ -30,6 +31,7 @@
   <div class="tile"><div class="k" id="t-events">–</div><div class="l">Events · today</div></div>
   <div class="tile warn"><div class="k" id="t-alerts">–</div><div class="l">Open alerts</div></div>
   <div class="tile"><div class="k" id="t-fps">–</div><div class="l">Processing fps</div></div>
+  <div class="tile crit"><div class="k" id="t-shelves-low">–</div><div class="l">Shelves need restock</div></div>
 </section>
 
 <main>
@@ -131,6 +133,33 @@
     </div>
     <h3>Existing zones</h3>
     <div id="zones-list" class="rules-list"></div>
+  </div>
+</div>
+
+<div class="modal" id="shelves-modal" hidden>
+  <div class="modal-card zones-card">
+    <button class="close" id="shelves-close">✕</button>
+    <h2>Shelves</h2>
+    <p class="hint">One shelf = one region to count stock in. A camera dedicated to a single
+      shelf can leave the region as the whole frame. Counting runs on its own schedule
+      (<code>SHELF_CHECK_INTERVAL_S</code>), not every frame like person tracking.</p>
+
+    <div id="shelves-list" class="shelves-list"></div>
+
+    <h3>Add shelf</h3>
+    <form id="shelf-form" class="rule-form">
+      <label>Name<input name="name" required placeholder="e.g. Aisle 3 - Coke 500ml"></label>
+      <label>Camera ID<input name="camera_id" required placeholder="shelf-cam-1"></label>
+      <label>Product<input name="product_name" placeholder="optional"></label>
+      <label>Capacity (full count)<input name="capacity" type="number" min="1" value="100" required></label>
+      <label>Restock below (%)<input name="low_stock_threshold_pct" type="number" min="1" max="99" value="70"></label>
+      <label>Cooldown (s)<input name="cooldown_s" type="number" value="1800" min="0"></label>
+      <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
+      <button type="submit" class="btn primary">Add shelf</button>
+    </form>
+
+    <h3>Restock alerts</h3>
+    <div id="shelf-alerts-list" class="rules-list"></div>
   </div>
 </div>
 
