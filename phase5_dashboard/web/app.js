@@ -81,16 +81,42 @@ async function loadEvents() {
 
 async function refreshStats() {
   try {
-    const [stats, emp, live, shelves] = await Promise.all([
+    const [stats, emp, live, shelves, zones] = await Promise.all([
       getJSON(`${API}/stats?window=today`),
       getJSON(`${API}/employees`),
       getJSON(`live/status`),
       getJSON(`${API}/shelves/summary`).catch(() => ({ shelves: [] })),
+      getJSON(`${API}/zones/summary`).catch(() => ({ zones: [] })),
     ]);
     setTiles(stats, emp, live);
     const low = shelves.shelves.filter((s) => s.last_check && s.last_check.pct_full <= s.low_stock_threshold);
     $("#t-shelves-low").textContent = shelves.shelves.length ? low.length : "–";
+    const queueZones = zones.zones.filter((z) => z.capacity);
+    const over = queueZones.filter((z) => z.last_check && z.last_check.count > z.capacity);
+    $("#t-queues-over").textContent = queueZones.length ? over.length : "–";
   } catch (e) { console.warn(e); }
+}
+
+// ---------------------------------------------------------------- alert sound
+let audioCtx = null;
+function playAlertSound() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = audioCtx.currentTime;
+    // two short beeps read clearly as "alert" without being jarring
+    [0, 0.18].forEach((delay) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, t0 + delay);
+      gain.gain.exponentialRampToValueAtTime(0.25, t0 + delay + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + 0.15);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + delay);
+      osc.stop(t0 + delay + 0.16);
+    });
+  } catch (e) { /* audio blocked (autoplay policy) or unsupported - ignore */ }
 }
 
 function connectWS() {
@@ -103,6 +129,7 @@ function connectWS() {
       state.events = state.events.slice(0, 200);
       renderEvents();
       refreshStats();
+      if (d.event.alert_status === "open") playAlertSound();
     }
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
@@ -252,19 +279,32 @@ async function loadZoneFrame() {
 $("#zone-bg").addEventListener("load", sizeZoneCanvas);
 window.addEventListener("resize", () => { if (!$("#zones-modal").hidden) sizeZoneCanvas(); });
 
+function queueColor(count, capacity) {
+  if (count > capacity) return "var(--crit)";
+  if (count === capacity) return "var(--warn)";
+  return "var(--good)";
+}
+
 function zoneRow(z) {
+  const chk = z.last_check;
+  const occupancy = z.capacity
+    ? (chk
+        ? `<div><div class="stockbar"><i style="width:${Math.min(100, (chk.count / z.capacity) * 100)}%;background:${queueColor(chk.count, z.capacity)}"></i></div>
+             <div class="stockpct">${chk.count}/${z.capacity}</div></div>`
+        : `<div class="stockpct">no checks yet</div>`)
+    : `<span></span>`;
   return `<div class="rule-row" data-id="${z.id}">
     <div>
       <div class="name" style="color:${z.color}">■ ${esc(z.name)}</div>
-      <div class="cond">${esc(z.camera_id)} · ${z.points.length} points</div>
+      <div class="cond">${esc(z.camera_id)} · ${z.points.length} points${z.capacity ? ` · capacity ${z.capacity}` : ""}</div>
     </div>
-    <span></span>
+    ${occupancy}
     <button data-act="delete">delete</button>
   </div>`;
 }
 
 async function loadZonesList() {
-  const d = await getJSON(`${API}/zones`);
+  const d = await getJSON(`${API}/zones/summary`);
   state.zones = d.zones;
   $("#zones-list").innerHTML = d.zones.length
     ? d.zones.map(zoneRow).join("")
@@ -272,11 +312,43 @@ async function loadZonesList() {
   redrawZoneCanvas();
 }
 
+function queueAlertRow(a) {
+  const btns = a.status === "open"
+    ? `<div class="alertbtns" data-id="${a.id}"><button data-act="ack">ack</button><button data-act="closed">close</button></div>`
+    : `<span class="conf">${esc(a.status)}</span>`;
+  return `<div class="rule-row" data-id="${a.id}">
+    <div>
+      <div class="name">${esc(a.zone_name)} <span class="prio prio-high">over capacity</span></div>
+      <div class="cond">${a.count}/${a.capacity} · ${fmtTime(a.created_at)}</div>
+    </div>
+    ${btns}
+  </div>`;
+}
+
+async function loadQueueAlerts() {
+  const d = await getJSON(`${API}/queue-alerts?status=open`);
+  $("#queue-alerts-list").innerHTML = d.alerts.length
+    ? d.alerts.map(queueAlertRow).join("")
+    : `<p class="hint">No open queue/crowd alerts.</p>`;
+}
+
+$("#queue-alerts-list").addEventListener("click", async (e) => {
+  const btns = e.target.closest(".alertbtns");
+  if (!btns) return;
+  await fetch(`${API}/queue-alerts/${btns.dataset.id}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: e.target.dataset.act }),
+  });
+  loadQueueAlerts();
+  refreshStats();
+});
+
 $("#zones-btn").addEventListener("click", () => {
   $("#zones-modal").hidden = false;
   zonePoints = [];
   loadZoneFrame();
   loadZonesList();
+  loadQueueAlerts();
 });
 $("#zones-close").addEventListener("click", () => ($("#zones-modal").hidden = true));
 $("#zones-modal").addEventListener("click", (e) => { if (e.target.id === "zones-modal") $("#zones-modal").hidden = true; });
@@ -296,15 +368,19 @@ $("#zone-finish").addEventListener("click", async () => {
   if (zonePoints.length < 3) return alert("Add at least 3 points before saving.");
   const name = $("#zone-name").value.trim();
   if (!name) return alert("Give the zone a name.");
+  const capacityRaw = $("#zone-capacity").value.trim();
   const r = await fetch(`${API}/zones`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       camera_id: state.cameraId || "cam-1", name, points: zonePoints, color: $("#zone-color").value,
+      capacity: capacityRaw ? Number(capacityRaw) : null,
+      queue_cooldown_s: Number($("#zone-cooldown").value) || 60,
     }),
   });
   if (!r.ok) return alert("Could not save zone: " + (await r.text()));
   zonePoints = [];
   $("#zone-name").value = "";
+  $("#zone-capacity").value = "";
   loadZonesList();
 });
 

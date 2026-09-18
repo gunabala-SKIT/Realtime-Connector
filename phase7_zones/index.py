@@ -7,13 +7,15 @@ import time
 
 from phase4_events.store import EventStore
 
-from .geometry import ground_point, point_in_polygon
+from .geometry import ground_point, inflate_polygon, point_in_polygon
 
 
 class ZoneIndex:
-    def __init__(self, store: EventStore, refresh_interval_s: float = 5.0) -> None:
+    def __init__(self, store: EventStore, refresh_interval_s: float = 5.0,
+                 margin: float = 0.08) -> None:
         self.store = store
         self.refresh_interval_s = refresh_interval_s
+        self.margin = margin
         self._by_camera: dict[str, list] = {}
         self._last_refresh = 0.0
 
@@ -24,7 +26,12 @@ class ZoneIndex:
         self._last_refresh = now
         by_camera: dict[str, list] = {}
         for z in self.store.list_zones(enabled_only=True):
-            by_camera.setdefault(z.camera_id, []).append(z)
+            # match against a slightly grown copy of the drawn shape - staff draw
+            # zones by hand and rarely click pixel-perfect, so someone standing
+            # right at (or just past) the line they drew should still count as
+            # "inside". The zones editor/API still return the exact points drawn.
+            hit_polygon = inflate_polygon(z.points, self.margin)
+            by_camera.setdefault(z.camera_id, []).append((z.name, hit_polygon))
         self._by_camera = by_camera
 
     def resolve(self, camera_id: str, bbox: tuple[int, int, int, int],
@@ -36,5 +43,5 @@ class ZoneIndex:
         if not zones:
             return None
         pt = ground_point(bbox, frame_w, frame_h)
-        hits = [z.name for z in zones if point_in_polygon(pt, z.points)]
+        hits = [name for name, polygon in zones if point_in_polygon(pt, polygon)]
         return ",".join(sorted(hits)) if hits else None

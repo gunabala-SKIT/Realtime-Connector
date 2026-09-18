@@ -51,7 +51,20 @@ class EventEngine:
             if tid not in live_ids:
                 continue
             status = ti.state.value
-            if status == IdentityState.UNVERIFIED.value and not self.cfg.emit_unverified:
+
+            zone = None
+            if self.zone_resolver is not None and positions and tid in positions:
+                try:
+                    zone = self.zone_resolver(self.cfg.camera_id, positions[tid], w, h)
+                except Exception:  # noqa: BLE001 - zone tagging must never break events
+                    self.log.exception("zone_resolver failed")
+
+            # An UNVERIFIED sighting is normally too noisy to log - identity
+            # hasn't settled yet, and tracker churn can spawn many short-lived
+            # tracks. Exception: standing inside a monitored zone is worth
+            # flagging immediately, since a restricted-zone alert shouldn't
+            # have to wait for a face match to fire.
+            if status == IdentityState.UNVERIFIED.value and not self.cfg.emit_unverified and zone is None:
                 continue
 
             seen = self._emitted.setdefault(tid, {})
@@ -61,12 +74,6 @@ class EventEngine:
                 continue
             seen[status] = now
 
-            zone = None
-            if self.zone_resolver is not None and positions and tid in positions:
-                try:
-                    zone = self.zone_resolver(self.cfg.camera_id, positions[tid], w, h)
-                except Exception:  # noqa: BLE001 - zone tagging must never break events
-                    self.log.exception("zone_resolver failed")
             new_events.append(self._emit(tid, ti, frame, now, zone))
 
         self._prune(live_ids, now)

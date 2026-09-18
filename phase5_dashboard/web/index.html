@@ -32,6 +32,7 @@
   <div class="tile warn"><div class="k" id="t-alerts">–</div><div class="l">Open alerts</div></div>
   <div class="tile"><div class="k" id="t-fps">–</div><div class="l">Processing fps</div></div>
   <div class="tile crit"><div class="k" id="t-shelves-low">–</div><div class="l">Shelves need restock</div></div>
+  <div class="tile warn"><div class="k" id="t-queues-over">–</div><div class="l">Zones over capacity</div></div>
 </section>
 
 <main>
@@ -118,7 +119,9 @@
     <button class="close" id="zones-close">✕</button>
     <h2>Zones</h2>
     <p class="hint">Click the frame to add points (need 3+), then name it and
-      <b>Finish &amp; save</b>. Rules can then match "person in zone X" (BRD §15).</p>
+      <b>Finish &amp; save</b>. Rules can then match "person in zone X" (BRD §15).
+      Optionally set a <b>capacity</b> to also turn it into a queue/crowd zone - it'll be
+      counted continuously and alert when more people are inside than the capacity allows.</p>
     <div class="zone-canvas-wrap">
       <img id="zone-bg" alt="camera frame">
       <canvas id="zone-canvas"></canvas>
@@ -126,6 +129,8 @@
     <div class="zone-controls">
       <input id="zone-name" placeholder="zone name" maxlength="40">
       <input id="zone-color" type="color" value="#3ccfd7" title="zone colour">
+      <input id="zone-capacity" type="number" min="1" placeholder="capacity (optional)" title="set to also monitor crowd/queue occupancy">
+      <input id="zone-cooldown" type="number" min="0" value="60" placeholder="cooldown (s)" title="min seconds between over-capacity alerts">
       <button type="button" class="btn" id="zone-undo">undo point</button>
       <button type="button" class="btn" id="zone-cancel">clear</button>
       <button type="button" class="btn" id="zone-refresh">↻ refresh frame</button>
@@ -133,6 +138,9 @@
     </div>
     <h3>Existing zones</h3>
     <div id="zones-list" class="rules-list"></div>
+
+    <h3>Queue / crowd alerts</h3>
+    <div id="queue-alerts-list" class="rules-list"></div>
   </div>
 </div>
 

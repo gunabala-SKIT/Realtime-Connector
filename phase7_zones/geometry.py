@@ -26,3 +26,16 @@ def ground_point(bbox: tuple[int, int, int, int], frame_w: int, frame_h: int) ->
     person is standing' point for ground-plane zones."""
     x1, y1, x2, y2 = bbox
     return (((x1 + x2) / 2.0) / max(frame_w, 1), y2 / max(frame_h, 1))
+
+
+def inflate_polygon(polygon: list, margin: float = 0.08) -> list:
+    """Grow a normalised polygon outward from its own centre by `margin`
+    (a fraction of its size). Zones are drawn by hand by non-technical staff
+    who click roughly, not pixel-perfect, so matching should tolerate a
+    person standing right at - or just past - the line they drew, not only
+    strictly inside it."""
+    if len(polygon) < 3:
+        return polygon
+    cx = sum(p[0] for p in polygon) / len(polygon)
+    cy = sum(p[1] for p in polygon) / len(polygon)
+    return [[cx + (x - cx) * (1 + margin), cy + (y - cy) * (1 + margin)] for x, y in polygon]

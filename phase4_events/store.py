@@ -95,6 +95,39 @@ CREATE TABLE IF NOT EXISTS zones (
 );
 CREATE INDEX IF NOT EXISTS idx_zones_camera ON zones(camera_id);
 
+-- Phase 9: queue / crowd density monitoring. A zone becomes a "queue zone"
+-- simply by having `capacity` set (see _ensure_column below for older DBs) -
+-- no separate region to draw, since it's the same "people standing
+-- somewhere" concept a zone already is, just counted continuously instead
+-- of tagged per-event.
+CREATE TABLE IF NOT EXISTS queue_checks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id     INTEGER NOT NULL,
+    camera_id   TEXT NOT NULL,
+    ts          REAL NOT NULL,
+    count       INTEGER NOT NULL,
+    capacity    INTEGER NOT NULL,
+    created_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_queue_checks_zone ON queue_checks(zone_id, id);
+
+CREATE TABLE IF NOT EXISTS queue_alerts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_uid       TEXT UNIQUE NOT NULL,
+    queue_check_id  INTEGER NOT NULL,
+    zone_id         INTEGER NOT NULL,
+    zone_name       TEXT NOT NULL,
+    camera_id       TEXT NOT NULL,
+    count           INTEGER NOT NULL,
+    capacity        INTEGER NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',  -- open | ack | closed
+    assigned_to     TEXT,
+    comment         TEXT,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_queue_alerts_status ON queue_alerts(status);
+
 -- Phase 8: shelf / inventory monitoring (BRD S8 Retail: shelf monitoring).
 -- A shelf is a counting region (same normalised-points idea as a zone) with
 -- an expected full count and a restock threshold - independent of `zones`,
@@ -200,6 +233,42 @@ class Zone:
     enabled: bool
     created_at: float
     updated_at: float
+    capacity: int | None = None        # set -> this zone is also a queue/crowd zone
+    queue_cooldown_s: float = 60.0     # min seconds between over-capacity alerts
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class QueueCheck:
+    id: int | None
+    zone_id: int
+    camera_id: str
+    ts: float
+    count: int
+    capacity: int
+    created_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class QueueAlert:
+    id: int | None
+    alert_uid: str
+    queue_check_id: int
+    zone_id: int
+    zone_name: str
+    camera_id: str
+    count: int
+    capacity: int
+    status: str
+    assigned_to: str | None
+    comment: str | None
+    created_at: float
+    updated_at: float
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -293,6 +362,8 @@ class EventStore:
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
         self._ensure_column("rules", "zone", "TEXT")  # added in Phase 7, migrate older DBs
+        self._ensure_column("zones", "capacity", "INTEGER")             # Phase 9
+        self._ensure_column("zones", "queue_cooldown_s", "REAL DEFAULT 60")  # Phase 9
 
     def _ensure_column(self, table: str, col: str, coltype: str) -> None:
         cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
@@ -403,12 +474,14 @@ class EventStore:
 
     # ------------------------------------------------------------------ zones
     def add_zone(self, *, camera_id: str, name: str, points: list,
-                 color: str = "#3ccfd7", enabled: bool = True) -> Zone:
+                 color: str = "#3ccfd7", enabled: bool = True,
+                 capacity: int | None = None, queue_cooldown_s: float = 60.0) -> Zone:
         now = time.time()
         cur = self.conn.execute(
-            "INSERT INTO zones (camera_id, name, points, color, enabled, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (camera_id, name, json.dumps(points), color, int(enabled), now, now),
+            "INSERT INTO zones (camera_id, name, points, color, enabled, created_at, updated_at, "
+            "capacity, queue_cooldown_s) VALUES (?,?,?,?,?,?,?,?,?)",
+            (camera_id, name, json.dumps(points), color, int(enabled), now, now,
+             capacity, queue_cooldown_s),
         )
         self.conn.commit()
         return self.get_zone(int(cur.lastrowid))
@@ -447,6 +520,68 @@ class EventStore:
         cur = self.conn.execute("DELETE FROM zones WHERE id=?", (zone_id,))
         self.conn.commit()
         return cur.rowcount > 0
+
+    # ----------------------------------------------------------- queue checks
+    def add_queue_check(self, *, zone_id: int, camera_id: str, ts: float,
+                         count: int, capacity: int) -> QueueCheck:
+        cur = self.conn.execute(
+            "INSERT INTO queue_checks (zone_id, camera_id, ts, count, capacity, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (zone_id, camera_id, ts, count, capacity, time.time()),
+        )
+        self.conn.commit()
+        row = self.conn.execute("SELECT * FROM queue_checks WHERE id=?", (cur.lastrowid,)).fetchone()
+        return _row_to_queue_check(row)
+
+    def list_queue_checks(self, *, zone_id: int | None = None, limit: int = 100) -> list[QueueCheck]:
+        sql = "SELECT * FROM queue_checks"
+        params: list = []
+        if zone_id is not None:
+            sql += " WHERE zone_id = ?"; params.append(zone_id)
+        sql += " ORDER BY id DESC LIMIT ?"; params.append(max(1, min(limit, 1000)))
+        return [_row_to_queue_check(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def latest_queue_checks(self) -> dict[int, QueueCheck]:
+        """Most recent check per zone_id, for a dashboard summary."""
+        rows = self.conn.execute(
+            "SELECT * FROM queue_checks WHERE id IN "
+            "(SELECT MAX(id) FROM queue_checks GROUP BY zone_id)"
+        ).fetchall()
+        return {r["zone_id"]: _row_to_queue_check(r) for r in rows}
+
+    # ----------------------------------------------------------- queue alerts
+    def create_queue_alert(self, check: QueueCheck, zone: Zone) -> QueueAlert:
+        import uuid
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO queue_alerts (alert_uid, queue_check_id, zone_id, zone_name, camera_id, "
+            "count, capacity, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (uuid.uuid4().hex, check.id, zone.id, zone.name, zone.camera_id,
+             check.count, check.capacity, "open", now, now),
+        )
+        self.conn.commit()
+        return self.get_queue_alert(int(cur.lastrowid))
+
+    def get_queue_alert(self, alert_id: int) -> QueueAlert | None:
+        row = self.conn.execute("SELECT * FROM queue_alerts WHERE id=?", (alert_id,)).fetchone()
+        return _row_to_queue_alert(row) if row else None
+
+    def list_queue_alerts(self, *, status: str | None = None, limit: int = 100) -> list[QueueAlert]:
+        sql = "SELECT * FROM queue_alerts"
+        params: list = []
+        if status:
+            sql += " WHERE status = ?"; params.append(status)
+        sql += " ORDER BY id DESC LIMIT ?"; params.append(max(1, min(limit, 1000)))
+        return [_row_to_queue_alert(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def update_queue_alert(self, alert_id: int, **fields) -> QueueAlert | None:
+        if not fields:
+            return self.get_queue_alert(alert_id)
+        cols = ", ".join(f"{k}=?" for k in fields)
+        self.conn.execute(f"UPDATE queue_alerts SET {cols}, updated_at=? WHERE id=?",
+                          [*fields.values(), time.time(), alert_id])
+        self.conn.commit()
+        return self.get_queue_alert(alert_id)
 
     # ----------------------------------------------------------------- shelves
     def add_shelf(self, *, camera_id: str, name: str, points: list, capacity: int,
@@ -699,6 +834,14 @@ def _row_to_zone(row: sqlite3.Row) -> Zone:
     d["points"] = json.loads(d["points"])
     d["enabled"] = bool(d["enabled"])
     return Zone(**d)
+
+
+def _row_to_queue_check(row: sqlite3.Row) -> QueueCheck:
+    return QueueCheck(**{k: row[k] for k in row.keys()})
+
+
+def _row_to_queue_alert(row: sqlite3.Row) -> QueueAlert:
+    return QueueAlert(**{k: row[k] for k in row.keys()})
 
 
 def _row_to_shelf(row: sqlite3.Row) -> Shelf:

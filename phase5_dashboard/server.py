@@ -27,6 +27,8 @@ from phase4_events.pipeline import VisionPipeline
 from phase6_rules.config import Phase6Config
 from phase6_rules.rules import RuleEngine
 from phase7_zones.index import ZoneIndex
+from phase9_queue.config import QueueConfig
+from phase9_queue.monitor import QueueMonitor
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -41,6 +43,9 @@ if not cfg6.email_configured:
 
 zone_index = ZoneIndex(pipeline.store)
 pipeline.engine.zone_resolver = zone_index.resolve
+
+queue_monitor = QueueMonitor(QueueConfig.load(), pipeline.store, log)
+pipeline.frame_hooks.append(queue_monitor.observe)
 
 
 @asynccontextmanager

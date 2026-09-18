@@ -22,9 +22,13 @@ Endpoints
   POST   /alerts/{id}   {"status"?, "assigned_to"?, "comment"?} -> ack/close/assign/annotate
 
   GET    /zones?camera_id=             -> configured zones (Phase 7)
-  POST   /zones                        -> create {camera_id, name, points: [[x,y]..], color?}
+  POST   /zones   {camera_id, name, points: [[x,y]..], color?, capacity?, queue_cooldown_s?}
   PATCH  /zones/{id}
   DELETE /zones/{id}
+  GET    /zones/summary                -> latest queue check per zone (Phase 9), for a dashboard tile
+  GET    /queue-checks?zone_id=&limit=
+  GET    /queue-alerts?status=
+  POST   /queue-alerts/{id}   {"status"?, "assigned_to"?, "comment"?}
 
   GET    /shelves?camera_id=           -> configured shelves (Phase 8)
   POST   /shelves    {camera_id, name, points, capacity, product_name?, low_stock_threshold?, ...}
@@ -229,6 +233,8 @@ class ZoneIn(BaseModel):
     points: list[list[float]]     # >= 3 [x, y] pairs, each 0..1
     color: str = "#3ccfd7"
     enabled: bool = True
+    capacity: int | None = None       # Phase 9: set -> this zone is also a queue/crowd zone
+    queue_cooldown_s: float = 60.0
 
 
 class ZonePatch(BaseModel):
@@ -236,6 +242,8 @@ class ZonePatch(BaseModel):
     points: list[list[float]] | None = None
     color: str | None = None
     enabled: bool | None = None
+    capacity: int | None = None
+    queue_cooldown_s: float | None = None
 
 
 @app.get("/zones")
@@ -244,10 +252,25 @@ def list_zones(camera_id: str | None = None) -> dict:
     return {"count": len(rows), "zones": [z.to_dict() for z in rows]}
 
 
+@app.get("/zones/summary")
+def zones_summary() -> dict:
+    """Every zone plus its latest queue-occupancy check, if it's capacity-
+    configured - what the dashboard's queue occupancy display uses."""
+    zones = store.list_zones()
+    latest = store.latest_queue_checks()
+    out = []
+    for z in zones:
+        chk = latest.get(z.id)
+        out.append({**z.to_dict(), "last_check": chk.to_dict() if chk else None})
+    return {"count": len(out), "zones": out}
+
+
 @app.post("/zones")
 def create_zone(body: ZoneIn) -> dict:
     if len(body.points) < 3:
         raise HTTPException(422, "a zone needs at least 3 points")
+    if body.capacity is not None and body.capacity < 1:
+        raise HTTPException(422, "capacity must be >= 1")
     zone = store.add_zone(**body.model_dump())
     return zone.to_dict()
 
@@ -268,6 +291,35 @@ def delete_zone(zone_id: int) -> dict:
     if not store.delete_zone(zone_id):
         raise HTTPException(404, "zone not found")
     return {"deleted": zone_id}
+
+
+@app.get("/queue-checks")
+def list_queue_checks(zone_id: int | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
+    rows = store.list_queue_checks(zone_id=zone_id, limit=limit)
+    return {"count": len(rows), "checks": [c.to_dict() for c in rows]}
+
+
+@app.get("/queue-alerts")
+def list_queue_alerts(status: str | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
+    rows = store.list_queue_alerts(status=status, limit=limit)
+    return {"count": len(rows), "alerts": [a.to_dict() for a in rows]}
+
+
+class QueueAlertPatch(BaseModel):
+    status: str | None = None
+    assigned_to: str | None = None
+    comment: str | None = None
+
+
+@app.post("/queue-alerts/{alert_id}")
+def update_queue_alert(alert_id: int, body: QueueAlertPatch) -> dict:
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "status" in fields and fields["status"] not in ("open", "ack", "closed"):
+        raise HTTPException(422, "status must be open|ack|closed")
+    a = store.update_queue_alert(alert_id, **fields)
+    if not a:
+        raise HTTPException(404, "queue alert not found")
+    return a.to_dict()
 
 
 # --------------------------------------------------------------------- shelves

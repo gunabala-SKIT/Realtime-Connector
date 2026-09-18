@@ -71,6 +71,13 @@ class VisionPipeline:
         # wires the rule engine in here without Phase 4 needing to know about it).
         self.event_hooks: list = []
 
+        # Called every frame with (camera_id, positions, frame_w, frame_h) -
+        # ALL currently-live track boxes, not just ones that just raised an
+        # event. Phase 9 wires queue/crowd counting in here: occupancy needs
+        # every live track on a schedule of its own, not just identity
+        # transitions the way zone-tagging (Phase 7) piggybacks on events.
+        self.frame_hooks: list = []
+
     # --------------------------------------------------------------- control
     def start(self) -> None:
         self.log.info("Warming up models ...")
@@ -146,6 +153,13 @@ class VisionPipeline:
                     hook(new_events)
                 except Exception:  # noqa: BLE001 - a hook must never break the vision loop
                     self.log.exception("event hook failed")
+            if self.frame_hooks:
+                fh, fw = frame.shape[:2]
+                for hook in self.frame_hooks:
+                    try:
+                        hook(self.cfg.camera_id, positions, fw, fh)
+                    except Exception:  # noqa: BLE001 - a hook must never break the vision loop
+                        self.log.exception("frame hook failed")
             self._rate.tick()
 
             draw_people(frame, people, self.resolver.tracks, dets, self.status())
