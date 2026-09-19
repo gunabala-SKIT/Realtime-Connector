@@ -19,6 +19,7 @@
   <div class="header-right">
     <button class="btn" id="shelves-btn">▥ Shelves</button>
     <button class="btn" id="zones-btn">▱ Zones</button>
+    <button class="btn" id="footfall-btn">⇅ Footfall</button>
     <button class="btn" id="rules-btn">⚙ Rules</button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
@@ -33,6 +34,8 @@
   <div class="tile"><div class="k" id="t-fps">–</div><div class="l">Processing fps</div></div>
   <div class="tile crit"><div class="k" id="t-shelves-low">–</div><div class="l">Shelves need restock</div></div>
   <div class="tile warn"><div class="k" id="t-queues-over">–</div><div class="l">Zones over capacity</div></div>
+  <div class="tile good"><div class="k" id="t-entries">–</div><div class="l">Entries</div></div>
+  <div class="tile"><div class="k" id="t-exits">–</div><div class="l">Exits</div></div>
 </section>
 
 <main>
@@ -141,6 +144,31 @@
 
     <h3>Queue / crowd alerts</h3>
     <div id="queue-alerts-list" class="rules-list"></div>
+  </div>
+</div>
+
+<div class="modal" id="footfall-modal" hidden>
+  <div class="modal-card zones-card">
+    <button class="close" id="footfall-close">✕</button>
+    <h2>Footfall</h2>
+    <p class="hint">Click exactly <b>2 points</b> across a doorway/entrance to draw a counting
+      line. Each tracked person is counted once, only when they actually cross it - not once
+      per frame. The arrow shows which side counts as <b>IN</b>; use <b>flip direction</b> if
+      it's backwards.</p>
+    <div class="zone-canvas-wrap">
+      <img id="line-bg" alt="camera frame">
+      <canvas id="line-canvas"></canvas>
+    </div>
+    <div class="zone-controls">
+      <input id="line-name" placeholder="line name" maxlength="40">
+      <input id="line-color" type="color" value="#e0a53a" title="line colour">
+      <button type="button" class="btn" id="line-flip">flip direction</button>
+      <button type="button" class="btn" id="line-cancel">clear</button>
+      <button type="button" class="btn" id="line-refresh">↻ refresh frame</button>
+      <button type="button" class="btn primary" id="line-finish">Finish &amp; save</button>
+    </div>
+    <h3>Existing lines</h3>
+    <div id="lines-list" class="rules-list"></div>
   </div>
 </div>
 

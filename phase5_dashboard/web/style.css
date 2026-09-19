@@ -163,6 +163,8 @@ input[type=search] { width: 130px; }
 #zone-name { padding: 6px 8px; flex: 1; min-width: 140px; }
 #zone-color { padding: 0; width: 34px; height: 30px; border-radius: 6px; border: 1px solid var(--hairline); background: none; }
 #zone-capacity, #zone-cooldown { padding: 6px 8px; width: 130px; }
+#line-name { padding: 6px 8px; flex: 1; min-width: 140px; }
+#line-color { padding: 0; width: 34px; height: 30px; border-radius: 6px; border: 1px solid var(--hairline); background: none; }
 
 .shelves-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 .shelf-row {

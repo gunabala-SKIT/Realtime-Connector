@@ -30,6 +30,14 @@ Endpoints
   GET    /queue-alerts?status=
   POST   /queue-alerts/{id}   {"status"?, "assigned_to"?, "comment"?}
 
+  GET    /count-lines?camera_id=        -> configured entry/exit lines (Phase 10)
+  POST   /count-lines   {camera_id, name, points: [[x,y],[x,y]], positive_is_in?, color?}
+  PATCH  /count-lines/{id}
+  DELETE /count-lines/{id}
+  GET    /count-lines/summary           -> each line + {entries, exits, net} since its reset
+  POST   /count-lines/{id}/reset        -> zero current totals, keeps crossing history
+  GET    /crossings?line_id=&limit=     -> raw crossing log
+
   GET    /shelves?camera_id=           -> configured shelves (Phase 8)
   POST   /shelves    {camera_id, name, points, capacity, product_name?, low_stock_threshold?, ...}
   PATCH  /shelves/{id}
@@ -320,6 +328,81 @@ def update_queue_alert(alert_id: int, body: QueueAlertPatch) -> dict:
     if not a:
         raise HTTPException(404, "queue alert not found")
     return a.to_dict()
+
+
+# --------------------------------------------------------------- count lines
+class CountLineIn(BaseModel):
+    camera_id: str
+    name: str
+    points: list[list[float]]      # exactly 2 [x, y] pairs, each 0..1
+    positive_is_in: bool = True
+    color: str = "#e0a53a"
+    enabled: bool = True
+
+
+class CountLinePatch(BaseModel):
+    name: str | None = None
+    points: list[list[float]] | None = None
+    positive_is_in: bool | None = None
+    color: str | None = None
+    enabled: bool | None = None
+
+
+@app.get("/count-lines")
+def list_count_lines(camera_id: str | None = None) -> dict:
+    rows = store.list_count_lines(camera_id=camera_id)
+    return {"count": len(rows), "lines": [l.to_dict() for l in rows]}
+
+
+@app.get("/count-lines/summary")
+def count_lines_summary() -> dict:
+    lines = store.list_count_lines()
+    out = []
+    for ln in lines:
+        counts = store.crossing_counts(ln.id)
+        entries, exits = counts.get("in", 0), counts.get("out", 0)
+        out.append({**ln.to_dict(), "entries": entries, "exits": exits, "net": entries - exits})
+    return {"count": len(out), "lines": out}
+
+
+@app.post("/count-lines")
+def create_count_line(body: CountLineIn) -> dict:
+    if len(body.points) != 2:
+        raise HTTPException(422, "a counting line needs exactly 2 points")
+    line = store.add_count_line(**body.model_dump())
+    return line.to_dict()
+
+
+@app.patch("/count-lines/{line_id}")
+def patch_count_line(line_id: int, body: CountLinePatch) -> dict:
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "points" in fields and len(fields["points"]) != 2:
+        raise HTTPException(422, "a counting line needs exactly 2 points")
+    line = store.update_count_line(line_id, **fields)
+    if not line:
+        raise HTTPException(404, "count line not found")
+    return line.to_dict()
+
+
+@app.delete("/count-lines/{line_id}")
+def delete_count_line(line_id: int) -> dict:
+    if not store.delete_count_line(line_id):
+        raise HTTPException(404, "count line not found")
+    return {"deleted": line_id}
+
+
+@app.post("/count-lines/{line_id}/reset")
+def reset_count_line(line_id: int) -> dict:
+    line = store.reset_count_line(line_id)
+    if not line:
+        raise HTTPException(404, "count line not found")
+    return line.to_dict()
+
+
+@app.get("/crossings")
+def list_crossings(line_id: int | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
+    rows = store.list_crossings(line_id=line_id, limit=limit)
+    return {"count": len(rows), "crossings": [c.to_dict() for c in rows]}
 
 
 # --------------------------------------------------------------------- shelves

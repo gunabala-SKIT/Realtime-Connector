@@ -29,6 +29,8 @@ from phase6_rules.rules import RuleEngine
 from phase7_zones.index import ZoneIndex
 from phase9_queue.config import QueueConfig
 from phase9_queue.monitor import QueueMonitor
+from phase10_footfall.config import FootfallConfig
+from phase10_footfall.counter import FootfallCounter
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -46,6 +48,9 @@ pipeline.engine.zone_resolver = zone_index.resolve
 
 queue_monitor = QueueMonitor(QueueConfig.load(), pipeline.store, log)
 pipeline.frame_hooks.append(queue_monitor.observe)
+
+footfall_counter = FootfallCounter(FootfallConfig.load(), pipeline.store, log)
+pipeline.frame_hooks.append(footfall_counter.observe)
 
 
 @asynccontextmanager

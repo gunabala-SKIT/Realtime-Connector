@@ -81,12 +81,13 @@ async function loadEvents() {
 
 async function refreshStats() {
   try {
-    const [stats, emp, live, shelves, zones] = await Promise.all([
+    const [stats, emp, live, shelves, zones, lines] = await Promise.all([
       getJSON(`${API}/stats?window=today`),
       getJSON(`${API}/employees`),
       getJSON(`live/status`),
       getJSON(`${API}/shelves/summary`).catch(() => ({ shelves: [] })),
       getJSON(`${API}/zones/summary`).catch(() => ({ zones: [] })),
+      getJSON(`${API}/count-lines/summary`).catch(() => ({ lines: [] })),
     ]);
     setTiles(stats, emp, live);
     const low = shelves.shelves.filter((s) => s.last_check && s.last_check.pct_full <= s.low_stock_threshold);
@@ -94,6 +95,8 @@ async function refreshStats() {
     const queueZones = zones.zones.filter((z) => z.capacity);
     const over = queueZones.filter((z) => z.last_check && z.last_check.count > z.capacity);
     $("#t-queues-over").textContent = queueZones.length ? over.length : "–";
+    $("#t-entries").textContent = lines.lines.length ? lines.lines.reduce((s, l) => s + l.entries, 0) : "–";
+    $("#t-exits").textContent = lines.lines.length ? lines.lines.reduce((s, l) => s + l.exits, 0) : "–";
   } catch (e) { console.warn(e); }
 }
 
@@ -389,6 +392,138 @@ $("#zones-list").addEventListener("click", async (e) => {
   if (!row || e.target.dataset.act !== "delete") return;
   await fetch(`${API}/zones/${row.dataset.id}`, { method: "DELETE" });
   loadZonesList();
+});
+
+// -------------------------------------------------------------- footfall
+let linePoints = [];
+let lineFlipped = false;
+let countLines = [];
+
+function sizeLineCanvas() {
+  const img = $("#line-bg"), c = $("#line-canvas");
+  c.width = img.clientWidth; c.height = img.clientHeight;
+  redrawLineCanvas();
+}
+
+function drawDirectionArrow(ctx, pts, positiveIsIn, color, w, h) {
+  if (pts.length !== 2) return;
+  const [ax, ay] = pts[0], [bx, by] = pts[1];
+  const mx = (ax + bx) / 2 * w, my = (ay + by) / 2 * h;
+  const dx = (bx - ax) * w, dy = (by - ay) * h;
+  const len = Math.hypot(dx, dy) || 1;
+  // perpendicular (-dy, dx) points toward the "positive" side, matching the
+  // backend's _signed_side cross-product convention (phase10_footfall/counter.py)
+  let px = -dy / len, py = dx / len;
+  if (!positiveIsIn) { px = -px; py = -py; }
+  const arrowLen = 26;
+  const ex = mx + px * arrowLen, ey = my + py * arrowLen;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(ex, ey); ctx.stroke();
+  const ang = Math.atan2(ey - my, ex - mx);
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - 8 * Math.cos(ang - Math.PI / 6), ey - 8 * Math.sin(ang - Math.PI / 6));
+  ctx.lineTo(ex - 8 * Math.cos(ang + Math.PI / 6), ey - 8 * Math.sin(ang + Math.PI / 6));
+  ctx.closePath(); ctx.fill();
+  ctx.font = "700 11px 'IBM Plex Mono', monospace";
+  ctx.fillText("IN", ex + px * 6, ey + py * 6);
+}
+
+function redrawLineCanvas() {
+  const c = $("#line-canvas"), ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  countLines.forEach((l) => {
+    drawPolygon(ctx, l.points, l.color, c.width, c.height, l.name, true);
+    drawDirectionArrow(ctx, l.points, l.positive_is_in, l.color, c.width, c.height);
+  });
+  if (linePoints.length) {
+    const color = $("#line-color").value;
+    drawPolygon(ctx, linePoints, color, c.width, c.height, null, true);
+    if (linePoints.length === 2) drawDirectionArrow(ctx, linePoints, !lineFlipped, color, c.width, c.height);
+  }
+}
+
+async function loadLineFrame() {
+  $("#line-bg").src = `live/frame.jpg?_=${Date.now()}`;
+}
+$("#line-bg").addEventListener("load", sizeLineCanvas);
+window.addEventListener("resize", () => { if (!$("#footfall-modal").hidden) sizeLineCanvas(); });
+
+function lineRow(l) {
+  return `<div class="rule-row" data-id="${l.id}">
+    <div>
+      <div class="name" style="color:${l.color}">⇅ ${esc(l.name)}</div>
+      <div class="cond">${esc(l.camera_id)} · in ${l.entries} · out ${l.exits} · net ${l.net}</div>
+    </div>
+    <span></span>
+    <div class="alertbtns" data-id="${l.id}">
+      <button data-act="reset">reset</button><button data-act="delete">delete</button>
+    </div>
+  </div>`;
+}
+
+async function loadCountLines() {
+  const d = await getJSON(`${API}/count-lines/summary`);
+  countLines = d.lines;
+  $("#lines-list").innerHTML = d.lines.length
+    ? d.lines.map(lineRow).join("")
+    : `<p class="hint">No counting lines yet.</p>`;
+  redrawLineCanvas();
+}
+
+$("#footfall-btn").addEventListener("click", () => {
+  $("#footfall-modal").hidden = false;
+  linePoints = [];
+  lineFlipped = false;
+  loadLineFrame();
+  loadCountLines();
+});
+$("#footfall-close").addEventListener("click", () => ($("#footfall-modal").hidden = true));
+$("#footfall-modal").addEventListener("click", (e) => { if (e.target.id === "footfall-modal") $("#footfall-modal").hidden = true; });
+
+$("#line-canvas").addEventListener("click", (e) => {
+  const rect = e.target.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+  if (linePoints.length >= 2) linePoints = [];   // a line is always exactly 2 points - start over
+  linePoints.push([Number(x.toFixed(4)), Number(y.toFixed(4))]);
+  redrawLineCanvas();
+});
+$("#line-flip").addEventListener("click", () => { lineFlipped = !lineFlipped; redrawLineCanvas(); });
+$("#line-cancel").addEventListener("click", () => { linePoints = []; redrawLineCanvas(); });
+$("#line-refresh").addEventListener("click", loadLineFrame);
+
+$("#line-finish").addEventListener("click", async () => {
+  if (linePoints.length !== 2) return alert("Click exactly 2 points to draw a line.");
+  const name = $("#line-name").value.trim();
+  if (!name) return alert("Give the line a name.");
+  const r = await fetch(`${API}/count-lines`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      camera_id: state.cameraId || "cam-1", name, points: linePoints,
+      color: $("#line-color").value, positive_is_in: !lineFlipped,
+    }),
+  });
+  if (!r.ok) return alert("Could not save line: " + (await r.text()));
+  linePoints = [];
+  lineFlipped = false;
+  $("#line-name").value = "";
+  loadCountLines();
+});
+
+$("#lines-list").addEventListener("click", async (e) => {
+  const btns = e.target.closest(".alertbtns");
+  if (!btns) return;
+  const id = btns.dataset.id;
+  if (e.target.dataset.act === "delete") {
+    await fetch(`${API}/count-lines/${id}`, { method: "DELETE" });
+  } else if (e.target.dataset.act === "reset") {
+    await fetch(`${API}/count-lines/${id}/reset`, { method: "POST" });
+  } else {
+    return;
+  }
+  loadCountLines();
+  refreshStats();
 });
 
 // ---------------------------------------------------------------- shelves

@@ -128,6 +128,37 @@ CREATE TABLE IF NOT EXISTS queue_alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_queue_alerts_status ON queue_alerts(status);
 
+-- Phase 10: footfall / entry-exit counting. A count line is 2 points (not a
+-- 3+ point polygon like a zone) drawn across a doorway/entrance. Each
+-- crossing is logged once per physical event (by track-id + which side of
+-- the line a track is confidently on, not per detected frame - see
+-- phase10_footfall/counter.py), so `line_crossings` is an append-only log
+-- and current totals are a COUNT(*)/GROUP BY over it since `reset_at`.
+CREATE TABLE IF NOT EXISTS count_lines (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    camera_id       TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    points          TEXT NOT NULL,             -- JSON [[x1,y1],[x2,y2]] normalised 0..1
+    positive_is_in  INTEGER NOT NULL DEFAULT 1, -- which side of point A->B counts as "in"
+    color           TEXT NOT NULL DEFAULT '#e0a53a',
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    reset_at        REAL NOT NULL,             -- crossings before this ts excluded from totals
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_count_lines_camera ON count_lines(camera_id);
+
+CREATE TABLE IF NOT EXISTS line_crossings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_id     INTEGER NOT NULL,
+    camera_id   TEXT NOT NULL,
+    track_id    INTEGER NOT NULL,
+    direction   TEXT NOT NULL,   -- 'in' | 'out'
+    ts          REAL NOT NULL,
+    created_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_line_crossings_line ON line_crossings(line_id, ts);
+
 -- Phase 8: shelf / inventory monitoring (BRD S8 Retail: shelf monitoring).
 -- A shelf is a counting region (same normalised-points idea as a zone) with
 -- an expected full count and a restock threshold - independent of `zones`,
@@ -269,6 +300,37 @@ class QueueAlert:
     comment: str | None
     created_at: float
     updated_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class CountLine:
+    id: int | None
+    camera_id: str
+    name: str
+    points: list           # exactly [[x1,y1], [x2,y2]], normalised 0..1
+    positive_is_in: bool
+    color: str
+    enabled: bool
+    reset_at: float
+    created_at: float
+    updated_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class LineCrossing:
+    id: int | None
+    line_id: int
+    camera_id: str
+    track_id: int
+    direction: str          # 'in' | 'out'
+    ts: float
+    created_at: float
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -583,6 +645,96 @@ class EventStore:
         self.conn.commit()
         return self.get_queue_alert(alert_id)
 
+    # ------------------------------------------------------------ count lines
+    def add_count_line(self, *, camera_id: str, name: str, points: list,
+                        positive_is_in: bool = True, color: str = "#e0a53a",
+                        enabled: bool = True) -> CountLine:
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO count_lines (camera_id, name, points, positive_is_in, color, "
+            "enabled, reset_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (camera_id, name, json.dumps(points), int(positive_is_in), color,
+             int(enabled), now, now, now),
+        )
+        self.conn.commit()
+        return self.get_count_line(int(cur.lastrowid))
+
+    def get_count_line(self, line_id: int) -> CountLine | None:
+        row = self.conn.execute("SELECT * FROM count_lines WHERE id=?", (line_id,)).fetchone()
+        return _row_to_count_line(row) if row else None
+
+    def list_count_lines(self, *, camera_id: str | None = None, enabled_only: bool = False) -> list[CountLine]:
+        where, params = [], []
+        if camera_id:
+            where.append("camera_id = ?"); params.append(camera_id)
+        if enabled_only:
+            where.append("enabled = 1")
+        sql = "SELECT * FROM count_lines"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id"
+        return [_row_to_count_line(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def update_count_line(self, line_id: int, **fields) -> CountLine | None:
+        if not fields:
+            return self.get_count_line(line_id)
+        fields = dict(fields)
+        if "points" in fields:
+            fields["points"] = json.dumps(fields["points"])
+        if "positive_is_in" in fields:
+            fields["positive_is_in"] = int(fields["positive_is_in"])
+        if "enabled" in fields:
+            fields["enabled"] = int(fields["enabled"])
+        cols = ", ".join(f"{k}=?" for k in fields)
+        self.conn.execute(f"UPDATE count_lines SET {cols}, updated_at=? WHERE id=?",
+                          [*fields.values(), time.time(), line_id])
+        self.conn.commit()
+        return self.get_count_line(line_id)
+
+    def reset_count_line(self, line_id: int) -> CountLine | None:
+        """Zero the *current* totals without discarding history - crossings
+        stay in the log, but summaries only count from this moment on."""
+        now = time.time()
+        self.conn.execute("UPDATE count_lines SET reset_at=?, updated_at=? WHERE id=?",
+                          (now, now, line_id))
+        self.conn.commit()
+        return self.get_count_line(line_id)
+
+    def delete_count_line(self, line_id: int) -> bool:
+        cur = self.conn.execute("DELETE FROM count_lines WHERE id=?", (line_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    # -------------------------------------------------------------- crossings
+    def add_crossing(self, *, line_id: int, camera_id: str, track_id: int,
+                      direction: str, ts: float) -> LineCrossing:
+        cur = self.conn.execute(
+            "INSERT INTO line_crossings (line_id, camera_id, track_id, direction, ts, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (line_id, camera_id, track_id, direction, ts, time.time()),
+        )
+        self.conn.commit()
+        row = self.conn.execute("SELECT * FROM line_crossings WHERE id=?", (cur.lastrowid,)).fetchone()
+        return _row_to_crossing(row)
+
+    def list_crossings(self, *, line_id: int | None = None, limit: int = 100) -> list[LineCrossing]:
+        sql = "SELECT * FROM line_crossings"
+        params: list = []
+        if line_id is not None:
+            sql += " WHERE line_id = ?"; params.append(line_id)
+        sql += " ORDER BY id DESC LIMIT ?"; params.append(max(1, min(limit, 1000)))
+        return [_row_to_crossing(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def crossing_counts(self, line_id: int) -> dict[str, int]:
+        """{'in': N, 'out': M} since the line's own reset_at."""
+        row = self.conn.execute("SELECT reset_at FROM count_lines WHERE id=?", (line_id,)).fetchone()
+        reset_at = row["reset_at"] if row else 0.0
+        rows = self.conn.execute(
+            "SELECT direction, COUNT(*) AS n FROM line_crossings WHERE line_id=? AND ts >= ? "
+            "GROUP BY direction", (line_id, reset_at),
+        ).fetchall()
+        return {r["direction"]: r["n"] for r in rows}
+
     # ----------------------------------------------------------------- shelves
     def add_shelf(self, *, camera_id: str, name: str, points: list, capacity: int,
                   product_name: str | None = None, low_stock_threshold: float = 0.7,
@@ -842,6 +994,18 @@ def _row_to_queue_check(row: sqlite3.Row) -> QueueCheck:
 
 def _row_to_queue_alert(row: sqlite3.Row) -> QueueAlert:
     return QueueAlert(**{k: row[k] for k in row.keys()})
+
+
+def _row_to_count_line(row: sqlite3.Row) -> CountLine:
+    d = {k: row[k] for k in row.keys()}
+    d["points"] = json.loads(d["points"])
+    d["positive_is_in"] = bool(d["positive_is_in"])
+    d["enabled"] = bool(d["enabled"])
+    return CountLine(**d)
+
+
+def _row_to_crossing(row: sqlite3.Row) -> LineCrossing:
+    return LineCrossing(**{k: row[k] for k in row.keys()})
 
 
 def _row_to_shelf(row: sqlite3.Row) -> Shelf:
