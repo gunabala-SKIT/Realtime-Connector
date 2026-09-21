@@ -10,6 +10,7 @@ import json
 import sqlite3
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
 _SCHEMA = """
@@ -158,6 +159,18 @@ CREATE TABLE IF NOT EXISTS line_crossings (
     created_at  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_line_crossings_line ON line_crossings(line_id, ts);
+
+-- Phase 11: cross-camera employee attendance. Every camera already writes
+-- RECOGNIZED events (with employee_code) into this same events.db - a
+-- camera only needs a role (which door does it watch, if any) to turn that
+-- existing data into "employee X entered at 9, exited at 7". Cameras with
+-- no row here (or role='internal') are ignored for attendance - an office
+-- camera isn't a doorway.
+CREATE TABLE IF NOT EXISTS camera_roles (
+    camera_id   TEXT PRIMARY KEY,
+    role        TEXT NOT NULL DEFAULT 'internal',  -- 'entry' | 'exit' | 'both' | 'internal'
+    updated_at  REAL NOT NULL
+);
 
 -- Phase 8: shelf / inventory monitoring (BRD S8 Retail: shelf monitoring).
 -- A shelf is a counting region (same normalised-points idea as a zone) with
@@ -734,6 +747,74 @@ class EventStore:
             "GROUP BY direction", (line_id, reset_at),
         ).fetchall()
         return {r["direction"]: r["n"] for r in rows}
+
+    # -------------------------------------------------------- camera roles
+    VALID_CAMERA_ROLES = ("entry", "exit", "both", "internal")
+
+    def set_camera_role(self, camera_id: str, role: str) -> dict:
+        if role not in self.VALID_CAMERA_ROLES:
+            raise ValueError(f"role must be one of {self.VALID_CAMERA_ROLES}")
+        now = time.time()
+        self.conn.execute(
+            "INSERT INTO camera_roles (camera_id, role, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(camera_id) DO UPDATE SET role=excluded.role, updated_at=excluded.updated_at",
+            (camera_id, role, now),
+        )
+        self.conn.commit()
+        return {"camera_id": camera_id, "role": role, "updated_at": now}
+
+    def camera_roles(self) -> dict[str, str]:
+        """{camera_id: role} for every camera that has an explicit role set."""
+        rows = self.conn.execute("SELECT camera_id, role FROM camera_roles").fetchall()
+        return {r["camera_id"]: r["role"] for r in rows}
+
+    def known_camera_ids(self) -> list[str]:
+        """Every camera_id ever seen in an event - lets the UI offer a role
+        dropdown for cameras that haven't been explicitly tagged yet."""
+        rows = self.conn.execute("SELECT DISTINCT camera_id FROM events ORDER BY camera_id").fetchall()
+        return [r["camera_id"] for r in rows]
+
+    def delete_camera_role(self, camera_id: str) -> bool:
+        cur = self.conn.execute("DELETE FROM camera_roles WHERE camera_id=?", (camera_id,))
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    # ---------------------------------------------------------- attendance
+    def attendance_for_date(self, date_str: str) -> list[dict]:
+        """Per employee: the earliest RECOGNIZED sighting on an entry-role
+        camera, and the latest on an exit-role camera, for one calendar day
+        (server-local time). A camera with no role set (or role='internal')
+        never contributes - it's an internal camera, not a doorway. Works
+        across every camera_id writing into this same events.db, which is
+        the whole point - no per-camera code needed to add a new doorway,
+        just tag its role."""
+        day_start = datetime.strptime(date_str, "%Y-%m-%d").timestamp()
+        day_end = day_start + 86400
+        roles = self.camera_roles()
+
+        rows = self.conn.execute(
+            "SELECT employee_code, employee_name, camera_id, ts FROM events "
+            "WHERE identity_status='RECOGNIZED' AND employee_code IS NOT NULL "
+            "AND ts >= ? AND ts < ? ORDER BY ts",
+            (day_start, day_end),
+        ).fetchall()
+
+        by_emp: dict[str, dict] = {}
+        for r in rows:
+            code, name, cam, ts = r["employee_code"], r["employee_name"], r["camera_id"], r["ts"]
+            role = roles.get(cam, "internal")
+            rec = by_emp.setdefault(code, {
+                "employee_code": code, "employee_name": name,
+                "entry_ts": None, "entry_camera": None,
+                "exit_ts": None, "exit_camera": None,
+            })
+            if role in ("entry", "both") and rec["entry_ts"] is None:
+                rec["entry_ts"] = ts
+                rec["entry_camera"] = cam
+            if role in ("exit", "both"):
+                rec["exit_ts"] = ts
+                rec["exit_camera"] = cam
+        return sorted(by_emp.values(), key=lambda r: (r["employee_name"] or r["employee_code"] or ""))
 
     # ----------------------------------------------------------------- shelves
     def add_shelf(self, *, camera_id: str, name: str, points: list, capacity: int,

@@ -48,6 +48,11 @@ Endpoints
   GET    /shelf-alerts?status=
   POST   /shelf-alerts/{id}   {"status"?, "assigned_to"?, "comment"?}
 
+  GET    /camera-roles                 -> {roles: {camera_id: role}, known_camera_ids: [...]} (Phase 11)
+  POST   /camera-roles   {camera_id, role: "entry"|"exit"|"both"|"internal"}
+  DELETE /camera-roles/{camera_id}
+  GET    /attendance?date=YYYY-MM-DD   -> per-employee entry/exit across every camera, default today
+
   WS   /ws/events                      -> pushes new events (with alert info + zone) as JSON, ~1 s
   WS   /ws/alerts                      -> pushes new alerts as JSON, ~1 s
 """
@@ -55,6 +60,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -403,6 +409,42 @@ def reset_count_line(line_id: int) -> dict:
 def list_crossings(line_id: int | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
     rows = store.list_crossings(line_id=line_id, limit=limit)
     return {"count": len(rows), "crossings": [c.to_dict() for c in rows]}
+
+
+# ----------------------------------------------------------- camera roles
+class CameraRoleIn(BaseModel):
+    camera_id: str
+    role: str
+
+
+@app.get("/camera-roles")
+def list_camera_roles() -> dict:
+    return {"roles": store.camera_roles(), "known_camera_ids": store.known_camera_ids()}
+
+
+@app.post("/camera-roles")
+def set_camera_role(body: CameraRoleIn) -> dict:
+    if body.role not in store.VALID_CAMERA_ROLES:
+        raise HTTPException(422, f"role must be one of {store.VALID_CAMERA_ROLES}")
+    return store.set_camera_role(body.camera_id, body.role)
+
+
+@app.delete("/camera-roles/{camera_id}")
+def delete_camera_role(camera_id: str) -> dict:
+    if not store.delete_camera_role(camera_id):
+        raise HTTPException(404, "camera_id has no role set")
+    return {"deleted": camera_id}
+
+
+# ------------------------------------------------------------- attendance
+@app.get("/attendance")
+def attendance(date_str: str | None = Query(None, alias="date")) -> dict:
+    date_str = date_str or date.today().isoformat()
+    try:
+        rows = store.attendance_for_date(date_str)
+    except ValueError:
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+    return {"date": date_str, "count": len(rows), "attendance": rows}
 
 
 # --------------------------------------------------------------------- shelves

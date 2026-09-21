@@ -81,13 +81,14 @@ async function loadEvents() {
 
 async function refreshStats() {
   try {
-    const [stats, emp, live, shelves, zones, lines] = await Promise.all([
+    const [stats, emp, live, shelves, zones, lines, attendanceToday] = await Promise.all([
       getJSON(`${API}/stats?window=today`),
       getJSON(`${API}/employees`),
       getJSON(`live/status`),
       getJSON(`${API}/shelves/summary`).catch(() => ({ shelves: [] })),
       getJSON(`${API}/zones/summary`).catch(() => ({ zones: [] })),
       getJSON(`${API}/count-lines/summary`).catch(() => ({ lines: [] })),
+      getJSON(`${API}/attendance`).catch(() => ({ attendance: [] })),
     ]);
     setTiles(stats, emp, live);
     const low = shelves.shelves.filter((s) => s.last_check && s.last_check.pct_full <= s.low_stock_threshold);
@@ -97,6 +98,8 @@ async function refreshStats() {
     $("#t-queues-over").textContent = queueZones.length ? over.length : "–";
     $("#t-entries").textContent = lines.lines.length ? lines.lines.reduce((s, l) => s + l.entries, 0) : "–";
     $("#t-exits").textContent = lines.lines.length ? lines.lines.reduce((s, l) => s + l.exits, 0) : "–";
+    const inBuilding = attendanceToday.attendance.filter((a) => a.entry_ts != null && a.exit_ts == null);
+    $("#t-in-building").textContent = attendanceToday.attendance.length ? inBuilding.length : "–";
   } catch (e) { console.warn(e); }
 }
 
@@ -525,6 +528,77 @@ $("#lines-list").addEventListener("click", async (e) => {
   loadCountLines();
   refreshStats();
 });
+
+// -------------------------------------------------------------- attendance
+function todayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+const CAMERA_ROLE_LABEL = { entry: "entry", exit: "exit", both: "both (entry+exit)", internal: "internal (not a doorway)" };
+
+function cameraRoleRow(cameraId, role) {
+  const opts = Object.entries(CAMERA_ROLE_LABEL)
+    .map(([v, label]) => `<option value="${v}" ${v === role ? "selected" : ""}>${label}</option>`).join("");
+  return `<div class="rule-row" data-camera="${esc(cameraId)}">
+    <div><div class="name">${esc(cameraId)}</div></div>
+    <select data-role-for="${esc(cameraId)}">${opts}</select>
+    <span></span>
+  </div>`;
+}
+
+async function loadCameraRoles() {
+  const d = await getJSON(`${API}/camera-roles`);
+  const cameraIds = Array.from(new Set([...d.known_camera_ids, ...Object.keys(d.roles)])).sort();
+  $("#camera-roles-list").innerHTML = cameraIds.length
+    ? cameraIds.map((c) => cameraRoleRow(c, d.roles[c] || "internal")).join("")
+    : `<p class="hint">No cameras have logged an event yet.</p>`;
+}
+
+$("#camera-roles-list").addEventListener("change", async (e) => {
+  const cameraId = e.target.dataset.roleFor;
+  if (!cameraId) return;
+  await fetch(`${API}/camera-roles`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ camera_id: cameraId, role: e.target.value }),
+  });
+  loadAttendance();   // roles changed - the currently viewed day's entry/exit may too
+});
+
+function attendanceRow(a) {
+  const entry = a.entry_ts != null ? `${fmtTime(a.entry_ts)} · ${esc(a.entry_camera)}` : "–";
+  const exit = a.exit_ts != null ? `${fmtTime(a.exit_ts)} · ${esc(a.exit_camera)}` : "–";
+  const status = a.entry_ts == null ? "" : a.exit_ts == null
+    ? `<span class="badge RECOGNIZED">present</span>` : `<span class="conf">departed</span>`;
+  return `<div class="rule-row">
+    <div>
+      <div class="name">${esc(a.employee_name || a.employee_code)}</div>
+      <div class="cond">in: ${entry} &nbsp;·&nbsp; out: ${exit}</div>
+    </div>
+    ${status}
+    <span></span>
+  </div>`;
+}
+
+async function loadAttendance() {
+  const dateStr = $("#attendance-date").value || todayStr();
+  const d = await getJSON(`${API}/attendance?date=${encodeURIComponent(dateStr)}`);
+  $("#attendance-list").innerHTML = d.attendance.length
+    ? d.attendance.map(attendanceRow).join("")
+    : `<p class="hint">No recognized employees for this date.</p>`;
+}
+
+$("#attendance-btn").addEventListener("click", () => {
+  $("#attendance-modal").hidden = false;
+  $("#attendance-date").value = todayStr();
+  loadCameraRoles();
+  loadAttendance();
+});
+$("#attendance-close").addEventListener("click", () => ($("#attendance-modal").hidden = true));
+$("#attendance-modal").addEventListener("click", (e) => { if (e.target.id === "attendance-modal") $("#attendance-modal").hidden = true; });
+$("#attendance-date").addEventListener("change", loadAttendance);
+$("#attendance-today").addEventListener("click", () => { $("#attendance-date").value = todayStr(); loadAttendance(); });
 
 // ---------------------------------------------------------------- shelves
 function stockColor(pct, threshold) {

@@ -20,6 +20,7 @@
     <button class="btn" id="shelves-btn">▥ Shelves</button>
     <button class="btn" id="zones-btn">▱ Zones</button>
     <button class="btn" id="footfall-btn">⇅ Footfall</button>
+    <button class="btn" id="attendance-btn">🕒 Attendance</button>
     <button class="btn" id="rules-btn">⚙ Rules</button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
@@ -36,6 +37,7 @@
   <div class="tile warn"><div class="k" id="t-queues-over">–</div><div class="l">Zones over capacity</div></div>
   <div class="tile good"><div class="k" id="t-entries">–</div><div class="l">Entries</div></div>
   <div class="tile"><div class="k" id="t-exits">–</div><div class="l">Exits</div></div>
+  <div class="tile good"><div class="k" id="t-in-building">–</div><div class="l">In building now</div></div>
 </section>
 
 <main>
@@ -169,6 +171,28 @@
     </div>
     <h3>Existing lines</h3>
     <div id="lines-list" class="rules-list"></div>
+  </div>
+</div>
+
+<div class="modal" id="attendance-modal" hidden>
+  <div class="modal-card zones-card">
+    <button class="close" id="attendance-close">✕</button>
+    <h2>Attendance</h2>
+    <p class="hint">Works off face recognition already running on every camera - no new
+      detection needed. Tag which cameras are doorways below; each employee's first
+      RECOGNIZED sighting today on an <b>entry</b> camera and last on an <b>exit</b> camera
+      become their entry/exit time. Cameras with no role (or "internal") are ignored -
+      an office camera isn't a doorway. Only works for enrolled, recognized employees.</p>
+
+    <h3>Camera roles</h3>
+    <div id="camera-roles-list" class="rules-list"></div>
+
+    <h3>Daily attendance</h3>
+    <div class="zone-controls">
+      <input id="attendance-date" type="date">
+      <button type="button" class="btn" id="attendance-today">today</button>
+    </div>
+    <div id="attendance-list" class="rules-list"></div>
   </div>
 </div>
 
