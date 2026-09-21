@@ -21,6 +21,7 @@
     <button class="btn" id="zones-btn">▱ Zones</button>
     <button class="btn" id="footfall-btn">⇅ Footfall</button>
     <button class="btn" id="attendance-btn">🕒 Attendance</button>
+    <button class="btn" id="track-btn">🎯 Track</button>
     <button class="btn" id="rules-btn">⚙ Rules</button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
@@ -193,6 +194,23 @@
       <button type="button" class="btn" id="attendance-today">today</button>
     </div>
     <div id="attendance-list" class="rules-list"></div>
+  </div>
+</div>
+
+<div class="modal" id="track-modal" hidden>
+  <div class="modal-card rules-card">
+    <button class="close" id="track-close">✕</button>
+    <h2>Live Tracking</h2>
+    <p class="hint">Select an employee to follow them across cameras - updates the instant
+      they're recognized on a different camera, no polling delay. Shows which camera by
+      name/label; this dashboard only streams its own camera's live video, so other
+      cameras aren't shown as video here, only identified by ID.</p>
+    <label>Employee
+      <select id="track-employee"><option value="">— select —</option></select>
+    </label>
+    <div id="track-current" style="margin-top:14px"></div>
+    <h3>Recent path (today)</h3>
+    <div id="track-path" class="rules-list"></div>
   </div>
 </div>
 

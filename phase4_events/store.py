@@ -816,6 +816,24 @@ class EventStore:
                 rec["exit_camera"] = cam
         return sorted(by_emp.values(), key=lambda r: (r["employee_name"] or r["employee_code"] or ""))
 
+    # -------------------------------------------------- live employee tracking
+    def track_employee(self, employee_code: str, *, date_str: str | None = None,
+                        limit: int = 20) -> list[dict]:
+        """Every RECOGNIZED sighting of one employee, most recent first,
+        across EVERY camera - unlike attendance, live tracking cares which
+        camera someone is near right now, not just entry/exit doorways, so
+        camera role is irrelevant here. Defaults to today."""
+        date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+        day_start = datetime.strptime(date_str, "%Y-%m-%d").timestamp()
+        day_end = day_start + 86400
+        rows = self.conn.execute(
+            "SELECT camera_id, ts, confidence FROM events "
+            "WHERE identity_status='RECOGNIZED' AND employee_code=? AND ts >= ? AND ts < ? "
+            "ORDER BY ts DESC LIMIT ?",
+            (employee_code, day_start, day_end, max(1, min(limit, 200))),
+        ).fetchall()
+        return [{"camera_id": r["camera_id"], "ts": r["ts"], "confidence": r["confidence"]} for r in rows]
+
     # ----------------------------------------------------------------- shelves
     def add_shelf(self, *, camera_id: str, name: str, points: list, capacity: int,
                   product_name: str | None = None, low_stock_threshold: float = 0.7,

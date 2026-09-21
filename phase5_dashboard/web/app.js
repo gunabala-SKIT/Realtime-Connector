@@ -136,6 +136,10 @@ function connectWS() {
       renderEvents();
       refreshStats();
       if (d.event.alert_status === "open") playAlertSound();
+      if (trackedEmployee && d.event.employee_code === trackedEmployee
+          && d.event.identity_status === "RECOGNIZED" && !$("#track-modal").hidden) {
+        loadTrack();   // instant update, no polling delay - this is the whole point of Task 3
+      }
     }
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
@@ -599,6 +603,74 @@ $("#attendance-close").addEventListener("click", () => ($("#attendance-modal").h
 $("#attendance-modal").addEventListener("click", (e) => { if (e.target.id === "attendance-modal") $("#attendance-modal").hidden = true; });
 $("#attendance-date").addEventListener("change", loadAttendance);
 $("#attendance-today").addEventListener("click", () => { $("#attendance-date").value = todayStr(); loadAttendance(); });
+
+// ----------------------------------------------------------- live tracking
+let trackedEmployee = null;
+
+async function loadTrackEmployeeOptions() {
+  const d = await getJSON(`${API}/employees`);
+  const sel = $("#track-employee");
+  const current = sel.value;
+  sel.innerHTML = `<option value="">— select —</option>` +
+    d.employees.map((e) => `<option value="${esc(e.code)}">${esc(e.name || e.code)}</option>`).join("");
+  sel.value = current;
+}
+
+function relTime(ts) {
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 60) return `${Math.floor(s)}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+function renderTrackCurrent(d) {
+  if (!d.current_camera) {
+    $("#track-current").innerHTML = `<p class="hint">No sightings for this employee today yet.</p>`;
+    return;
+  }
+  const stale = Date.now() / 1000 - d.last_seen_ts > 300;   // 5+ min old - probably out of view now
+  $("#track-current").innerHTML = `<div class="rule-row">
+    <div>
+      <div class="name">${stale ? "Last seen" : "Currently on"}: ${esc(d.current_camera)}</div>
+      <div class="cond">${fmtTime(d.last_seen_ts)} · ${relTime(d.last_seen_ts)}${stale ? " - stale" : ""}</div>
+    </div>
+    <span class="badge ${stale ? "UNVERIFIED" : "RECOGNIZED"}">${stale ? "stale" : "live"}</span>
+    <span></span>
+  </div>`;
+}
+
+function trackPathRow(p) {
+  return `<div class="rule-row">
+    <div><div class="name">${esc(p.camera_id)}</div></div>
+    <div class="cond">${fmtTime(p.ts)}</div>
+    <span></span>
+  </div>`;
+}
+
+async function loadTrack() {
+  if (!trackedEmployee) {
+    $("#track-current").innerHTML = "";
+    $("#track-path").innerHTML = `<p class="hint">Select an employee above.</p>`;
+    return;
+  }
+  const d = await getJSON(`${API}/track/${encodeURIComponent(trackedEmployee)}`);
+  renderTrackCurrent(d);
+  $("#track-path").innerHTML = d.path.length
+    ? d.path.map(trackPathRow).join("")
+    : `<p class="hint">No sightings yet today.</p>`;
+}
+
+$("#track-btn").addEventListener("click", () => {
+  $("#track-modal").hidden = false;
+  loadTrackEmployeeOptions();
+  loadTrack();
+});
+$("#track-close").addEventListener("click", () => ($("#track-modal").hidden = true));
+$("#track-modal").addEventListener("click", (e) => { if (e.target.id === "track-modal") $("#track-modal").hidden = true; });
+$("#track-employee").addEventListener("change", (e) => {
+  trackedEmployee = e.target.value || null;
+  loadTrack();
+});
 
 // ---------------------------------------------------------------- shelves
 function stockColor(pct, threshold) {

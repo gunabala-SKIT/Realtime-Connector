@@ -18,7 +18,8 @@ See `Reality_Connector_MVP_Acceptance_Criteria_v0.1.docx` for measurable MVP tar
 | **Phase 9** | Queue / crowd density monitoring — any zone can alert when over capacity | Done — [`phase9_queue/`](phase9_queue/README.md) |
 | **Phase 10** | Footfall / entry-exit counting — draw a line, count people crossing it by track (not per-frame) | Done — [`phase10_footfall/`](phase10_footfall/README.md) |
 | **Phase 11** | Cross-camera employee attendance — entry on one camera, exit on another, aggregated per employee per day | Done — [`phase11_attendance/`](phase11_attendance/README.md) |
-| Phase 12+ | Live "select and follow" cross-camera tracking, vehicle entry/exit, production hardening | Not started |
+| **Phase 12** | Live "select and follow" cross-camera tracking — pick an employee, see which camera they're on update live | Done — [`phase12_tracking/`](phase12_tracking/README.md) |
+| Phase 13+ | Vehicle entry/exit tracking, production hardening | Not started |
 
 ```bash
 python -m phase5_dashboard      # everything, at http://127.0.0.1:8000

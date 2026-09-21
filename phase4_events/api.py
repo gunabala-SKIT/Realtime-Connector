@@ -52,6 +52,7 @@ Endpoints
   POST   /camera-roles   {camera_id, role: "entry"|"exit"|"both"|"internal"}
   DELETE /camera-roles/{camera_id}
   GET    /attendance?date=YYYY-MM-DD   -> per-employee entry/exit across every camera, default today
+  GET    /track/{employee_code}?date=&limit=  -> current camera + recent path (Phase 12), default today
 
   WS   /ws/events                      -> pushes new events (with alert info + zone) as JSON, ~1 s
   WS   /ws/alerts                      -> pushes new alerts as JSON, ~1 s
@@ -445,6 +446,26 @@ def attendance(date_str: str | None = Query(None, alias="date")) -> dict:
     except ValueError:
         raise HTTPException(422, "date must be YYYY-MM-DD")
     return {"date": date_str, "count": len(rows), "attendance": rows}
+
+
+# --------------------------------------------------------------- live tracking
+@app.get("/track/{employee_code}")
+def track_employee(employee_code: str, date_str: str | None = Query(None, alias="date"),
+                    limit: int = Query(20, ge=1, le=200)) -> dict:
+    date_str = date_str or date.today().isoformat()
+    try:
+        path = store.track_employee(employee_code, date_str=date_str, limit=limit)
+    except ValueError:
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+    current = path[0] if path else None
+    return {
+        "employee_code": employee_code,
+        "date": date_str,
+        "current_camera": current["camera_id"] if current else None,
+        "last_seen_ts": current["ts"] if current else None,
+        "count": len(path),
+        "path": path,
+    }
 
 
 # --------------------------------------------------------------------- shelves
