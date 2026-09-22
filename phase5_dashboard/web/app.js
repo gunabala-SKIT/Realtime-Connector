@@ -59,6 +59,10 @@ function setTiles(stats, emp, live) {
   $("#t-fps").textContent = live?.proc_fps != null ? live.proc_fps.toFixed(1) : "–";
   if (live) {
     $("#live-dot").classList.toggle("on", !!live.alive);
+    $("#topbar-dot").classList.toggle("on", !!live.alive);
+    $("#topbar-pill").classList.toggle("offline", !live.alive);
+    $("#live-status-text").textContent = live.alive ? "pipeline online" : "pipeline down";
+    $("#topbar-status-text").textContent = live.alive ? "System Online" : "System Offline";
     $("#cam-label").textContent = live.camera_id || "cam";
     state.cameraId = live.camera_id || state.cameraId;
     $("#live-meta").textContent = `${live.resolution} · ${live.proc_fps?.toFixed(1)} fps · person ${live.person_ms}ms · face ${live.face_ms}ms · up ${live.uptime_s}s`;
@@ -102,8 +106,60 @@ async function refreshStats() {
     const inBuilding = attendanceToday.attendance.filter((a) => a.entry_ts != null && a.exit_ts == null);
     $("#t-in-building").textContent = attendanceToday.attendance.length ? inBuilding.length : "–";
     $("#t-vehicles").textContent = vehiclesToday.log.length || "–";
+    loadAlerts().catch(console.warn);
   } catch (e) { console.warn(e); }
 }
+
+// ---------------------------------------------------------------- active alerts
+function relTimeShort(ts) {
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 60) return `${Math.floor(s)}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+function alertCard(a) {
+  const who = a.employee_name ? ` · ${esc(a.employee_name)}` : "";
+  return `<div class="alert-card prio-${a.priority}" data-id="${a.id}" data-event="${a.event_id}">
+    <div>
+      <div class="name">${esc(a.rule_name || "Alert")} <span class="prio prio-${a.priority}">${a.priority}</span></div>
+      <div class="cond">${esc(a.camera_id)}${who} · ${relTimeShort(a.created_at)}</div>
+    </div>
+    <div class="actions">
+      <button data-act="ack">Acknowledge</button>
+      <button data-act="view" class="view">View Event</button>
+    </div>
+  </div>`;
+}
+
+async function loadAlerts() {
+  const d = await getJSON(`${API}/alerts?status=open&limit=50`);
+  $("#alerts-list").innerHTML = d.alerts.length
+    ? d.alerts.map(alertCard).join("")
+    : `<p class="hint">No open alerts.</p>`;
+  $("#alerts-count").textContent = `${d.alerts.length} Open`;
+  $("#bell-badge").hidden = d.alerts.length === 0;
+  $("#bell-badge").textContent = d.alerts.length;
+}
+
+$("#alerts-list").addEventListener("click", async (e) => {
+  const card = e.target.closest(".alert-card");
+  if (!card || !e.target.dataset.act) return;
+  if (e.target.dataset.act === "ack") {
+    await fetch(`${API}/alerts/${card.dataset.id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ack" }),
+    });
+    loadAlerts();
+    refreshStats();
+  } else if (e.target.dataset.act === "view") {
+    openModal(card.dataset.event);
+  }
+});
+
+$("#bell-btn").addEventListener("click", () => {
+  showPage("dashboard");
+  $("#alerts-list").scrollIntoView({ behavior: "smooth", block: "center" });
+});
 
 // ---------------------------------------------------------------- alert sound
 let audioCtx = null;
@@ -139,7 +195,7 @@ function connectWS() {
       refreshStats();
       if (d.event.alert_status === "open") playAlertSound();
       if (trackedEmployee && d.event.employee_code === trackedEmployee
-          && d.event.identity_status === "RECOGNIZED" && !$("#track-modal").hidden) {
+          && d.event.identity_status === "RECOGNIZED" && $("#page-track").classList.contains("active")) {
         loadTrack();   // instant update, no polling delay - this is the whole point of Task 3
       }
     }
@@ -210,10 +266,6 @@ async function loadRules() {
     state.zones.map((z) => `<option value="${esc(z.name)}">${esc(z.name)}</option>`).join("");
   sel.value = cur;
 }
-
-$("#rules-btn").addEventListener("click", () => { $("#rules-modal").hidden = false; loadRules(); });
-$("#rules-close").addEventListener("click", () => ($("#rules-modal").hidden = true));
-$("#rules-modal").addEventListener("click", (e) => { if (e.target.id === "rules-modal") $("#rules-modal").hidden = true; });
 
 $("#rules-list").addEventListener("click", async (e) => {
   const row = e.target.closest(".rule-row");
@@ -289,7 +341,7 @@ async function loadZoneFrame() {
   $("#zone-bg").src = `live/frame.jpg?_=${Date.now()}`;
 }
 $("#zone-bg").addEventListener("load", sizeZoneCanvas);
-window.addEventListener("resize", () => { if (!$("#zones-modal").hidden) sizeZoneCanvas(); });
+window.addEventListener("resize", () => { if ($("#page-zones").classList.contains("active")) sizeZoneCanvas(); });
 
 function queueColor(count, capacity) {
   if (count > capacity) return "var(--crit)";
@@ -354,16 +406,6 @@ $("#queue-alerts-list").addEventListener("click", async (e) => {
   loadQueueAlerts();
   refreshStats();
 });
-
-$("#zones-btn").addEventListener("click", () => {
-  $("#zones-modal").hidden = false;
-  zonePoints = [];
-  loadZoneFrame();
-  loadZonesList();
-  loadQueueAlerts();
-});
-$("#zones-close").addEventListener("click", () => ($("#zones-modal").hidden = true));
-$("#zones-modal").addEventListener("click", (e) => { if (e.target.id === "zones-modal") $("#zones-modal").hidden = true; });
 
 $("#zone-canvas").addEventListener("click", (e) => {
   const rect = e.target.getBoundingClientRect();
@@ -456,7 +498,7 @@ async function loadLineFrame() {
   $("#line-bg").src = `live/frame.jpg?_=${Date.now()}`;
 }
 $("#line-bg").addEventListener("load", sizeLineCanvas);
-window.addEventListener("resize", () => { if (!$("#footfall-modal").hidden) sizeLineCanvas(); });
+window.addEventListener("resize", () => { if ($("#page-footfall").classList.contains("active")) sizeLineCanvas(); });
 
 function lineRow(l) {
   return `<div class="rule-row" data-id="${l.id}">
@@ -479,16 +521,6 @@ async function loadCountLines() {
     : `<p class="hint">No counting lines yet.</p>`;
   redrawLineCanvas();
 }
-
-$("#footfall-btn").addEventListener("click", () => {
-  $("#footfall-modal").hidden = false;
-  linePoints = [];
-  lineFlipped = false;
-  loadLineFrame();
-  loadCountLines();
-});
-$("#footfall-close").addEventListener("click", () => ($("#footfall-modal").hidden = true));
-$("#footfall-modal").addEventListener("click", (e) => { if (e.target.id === "footfall-modal") $("#footfall-modal").hidden = true; });
 
 $("#line-canvas").addEventListener("click", (e) => {
   const rect = e.target.getBoundingClientRect();
@@ -595,14 +627,6 @@ async function loadAttendance() {
     : `<p class="hint">No recognized employees for this date.</p>`;
 }
 
-$("#attendance-btn").addEventListener("click", () => {
-  $("#attendance-modal").hidden = false;
-  $("#attendance-date").value = todayStr();
-  loadCameraRoles();
-  loadAttendance();
-});
-$("#attendance-close").addEventListener("click", () => ($("#attendance-modal").hidden = true));
-$("#attendance-modal").addEventListener("click", (e) => { if (e.target.id === "attendance-modal") $("#attendance-modal").hidden = true; });
 $("#attendance-date").addEventListener("change", loadAttendance);
 $("#attendance-today").addEventListener("click", () => { $("#attendance-date").value = todayStr(); loadAttendance(); });
 
@@ -662,13 +686,6 @@ async function loadTrack() {
     : `<p class="hint">No sightings yet today.</p>`;
 }
 
-$("#track-btn").addEventListener("click", () => {
-  $("#track-modal").hidden = false;
-  loadTrackEmployeeOptions();
-  loadTrack();
-});
-$("#track-close").addEventListener("click", () => ($("#track-modal").hidden = true));
-$("#track-modal").addEventListener("click", (e) => { if (e.target.id === "track-modal") $("#track-modal").hidden = true; });
 $("#track-employee").addEventListener("change", (e) => {
   trackedEmployee = e.target.value || null;
   loadTrack();
@@ -717,14 +734,6 @@ async function loadVehicleEvents() {
     : `<p class="hint">No plate reads yet.</p>`;
 }
 
-$("#vehicles-btn").addEventListener("click", () => {
-  $("#vehicles-modal").hidden = false;
-  $("#vehicle-log-date").value = todayStr();
-  loadVehicleLog();
-  loadVehicleEvents();
-});
-$("#vehicles-close").addEventListener("click", () => ($("#vehicles-modal").hidden = true));
-$("#vehicles-modal").addEventListener("click", (e) => { if (e.target.id === "vehicles-modal") $("#vehicles-modal").hidden = true; });
 $("#vehicle-log-date").addEventListener("change", loadVehicleLog);
 $("#vehicle-log-today").addEventListener("click", () => { $("#vehicle-log-date").value = todayStr(); loadVehicleLog(); });
 
@@ -779,14 +788,6 @@ async function loadShelfAlerts() {
     : `<p class="hint">No open restock alerts.</p>`;
 }
 
-$("#shelves-btn").addEventListener("click", () => {
-  $("#shelves-modal").hidden = false;
-  loadShelves();
-  loadShelfAlerts();
-});
-$("#shelves-close").addEventListener("click", () => ($("#shelves-modal").hidden = true));
-$("#shelves-modal").addEventListener("click", (e) => { if (e.target.id === "shelves-modal") $("#shelves-modal").hidden = true; });
-
 $("#shelves-list").addEventListener("click", async (e) => {
   const row = e.target.closest(".shelf-row");
   if (!row || e.target.dataset.act !== "delete") return;
@@ -838,6 +839,42 @@ $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#
     state.filter = { status: $("#f-status").value, alert: $("#f-alert").value, q: $("#f-q").value };
     renderEvents();
   }));
+
+// ---------------------------------------------------------------- page nav
+const PAGES = ["dashboard", "shelves", "zones", "footfall", "attendance", "track", "vehicles", "rules"];
+const PAGE_TITLES = {
+  dashboard: "Dashboard", shelves: "Shelf Configuration", zones: "Zones", footfall: "Footfall",
+  attendance: "Attendance", track: "Track", vehicles: "Vehicles", rules: "Rules",
+};
+
+function onPageShown(name) {
+  if (name === "shelves") { loadShelves(); loadShelfAlerts(); }
+  else if (name === "zones") { zonePoints = []; loadZoneFrame(); loadZonesList(); loadQueueAlerts(); }
+  else if (name === "footfall") { linePoints = []; lineFlipped = false; loadLineFrame(); loadCountLines(); }
+  else if (name === "attendance") { $("#attendance-date").value = todayStr(); loadCameraRoles(); loadAttendance(); }
+  else if (name === "track") { loadTrackEmployeeOptions(); loadTrack(); }
+  else if (name === "vehicles") { $("#vehicle-log-date").value = todayStr(); loadVehicleLog(); loadVehicleEvents(); }
+  else if (name === "rules") { loadRules(); }
+}
+
+function showPage(name) {
+  if (!PAGES.includes(name)) return;
+  PAGES.forEach((p) => $("#page-" + p).classList.toggle("active", p === name));
+  document.querySelectorAll(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.page === name));
+  $("#page-title").textContent = PAGE_TITLES[name];
+  onPageShown(name);
+}
+
+document.querySelectorAll(".nav-item").forEach((el) => el.addEventListener("click", () => showPage(el.dataset.page)));
+
+$("#shelf-add-btn").addEventListener("click", () => {
+  $("#shelf-form-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("#shelf-form input[name=name]").focus();
+});
+$("#rule-add-btn").addEventListener("click", () => {
+  $("#rule-form-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("#rule-form input[name=name]").focus();
+});
 
 setInterval(() => ($("#clock").textContent = new Date().toLocaleTimeString([], { hour12: false })), 1000);
 setInterval(refreshStats, 3000);

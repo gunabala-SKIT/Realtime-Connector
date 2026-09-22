@@ -10,257 +10,360 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <div class="brand">
-    <span class="dot" id="live-dot" title="pipeline status"></span>
-    <b>REALITY CONNECTOR</b>
-    <span class="sub" id="cam-label">cam-1</span>
-  </div>
-  <div class="header-right">
-    <button class="btn" id="shelves-btn">▥ Shelves</button>
-    <button class="btn" id="zones-btn">▱ Zones</button>
-    <button class="btn" id="footfall-btn">⇅ Footfall</button>
-    <button class="btn" id="attendance-btn">🕒 Attendance</button>
-    <button class="btn" id="track-btn">🎯 Track</button>
-    <button class="btn" id="vehicles-btn">🚗 Vehicles</button>
-    <button class="btn" id="rules-btn">⚙ Rules</button>
-    <div class="clock" id="clock">--:--:--</div>
-  </div>
-</header>
+<div class="app">
 
-<section class="tiles" id="tiles">
-  <div class="tile"><div class="k" id="t-employees">–</div><div class="l">Employees</div></div>
-  <div class="tile good"><div class="k" id="t-recognized">–</div><div class="l">Recognized · today</div></div>
-  <div class="tile crit"><div class="k" id="t-unknown">–</div><div class="l">Unknown · today</div></div>
-  <div class="tile"><div class="k" id="t-events">–</div><div class="l">Events · today</div></div>
-  <div class="tile warn"><div class="k" id="t-alerts">–</div><div class="l">Open alerts</div></div>
-  <div class="tile"><div class="k" id="t-fps">–</div><div class="l">Processing fps</div></div>
-  <div class="tile crit"><div class="k" id="t-shelves-low">–</div><div class="l">Shelves need restock</div></div>
-  <div class="tile warn"><div class="k" id="t-queues-over">–</div><div class="l">Zones over capacity</div></div>
-  <div class="tile good"><div class="k" id="t-entries">–</div><div class="l">Entries</div></div>
-  <div class="tile"><div class="k" id="t-exits">–</div><div class="l">Exits</div></div>
-  <div class="tile good"><div class="k" id="t-in-building">–</div><div class="l">In building now</div></div>
-  <div class="tile"><div class="k" id="t-vehicles">–</div><div class="l">Vehicles · today</div></div>
-</section>
-
-<main>
-  <section class="panel live">
-    <div class="panel-head"><span>Live</span><span class="mono" id="live-meta"></span></div>
-    <div class="video-wrap">
-      <img id="live-img" alt="live view" src="live.mjpg">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">✳</span>
+      <div class="brand-text"><b>Reality</b><span>CONNECTOR</span></div>
     </div>
-  </section>
+    <nav class="nav">
+      <button class="nav-item active" data-page="dashboard">
+        <svg viewBox="0 0 20 20"><rect x="2.5" y="2.5" width="6.5" height="6.5" rx="1.4"/><rect x="11" y="2.5" width="6.5" height="6.5" rx="1.4"/><rect x="2.5" y="11" width="6.5" height="6.5" rx="1.4"/><rect x="11" y="11" width="6.5" height="6.5" rx="1.4"/></svg>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-page="shelves">
+        <svg viewBox="0 0 20 20"><path d="M2.5 6 10 2.5 17.5 6 10 9.5Z"/><path d="M2.5 6v8L10 17.5 17.5 14V6"/><path d="M10 9.5v8"/></svg>
+        <span>Shelf Configuration</span>
+      </button>
+      <button class="nav-item" data-page="zones">
+        <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="2.6"/></svg>
+        <span>Zones</span>
+      </button>
+      <button class="nav-item" data-page="footfall">
+        <svg viewBox="0 0 20 20"><path d="M3 15V9c0-2.5 1.8-4 4-4h1"/><path d="M17 5v6c0 2.5-1.8 4-4 4h-1"/><path d="m5.5 3-2.3 2 2.3 2M14.5 17l2.3-2-2.3-2"/></svg>
+        <span>Footfall</span>
+      </button>
+      <button class="nav-item" data-page="attendance">
+        <svg viewBox="0 0 20 20"><circle cx="8" cy="6.5" r="3"/><path d="M2.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5"/><path d="m14.5 9.5 1.4 1.4L19 7.7"/></svg>
+        <span>Attendance</span>
+      </button>
+      <button class="nav-item" data-page="track">
+        <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="1.6"/><path d="M10 2.5v2.2M10 15.3v2.2M17.5 10h-2.2M4.7 10H2.5"/></svg>
+        <span>Track</span>
+      </button>
+      <button class="nav-item" data-page="vehicles">
+        <svg viewBox="0 0 20 20"><path d="M3 12.5V9.8L4.8 6h10.4L17 9.8v2.7"/><path d="M3 12.5h14v2.3a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-.6H6v.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><circle cx="6.3" cy="12.5" r="1.1"/><circle cx="13.7" cy="12.5" r="1.1"/></svg>
+        <span>Vehicles</span>
+      </button>
+      <button class="nav-item" data-page="rules">
+        <svg viewBox="0 0 20 20"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5Z"/><path d="m7.3 10 1.8 1.8 3.6-3.6"/></svg>
+        <span>Rules</span>
+      </button>
+    </nav>
+  </aside>
 
-  <section class="panel feed">
-    <div class="panel-head">
-      <span>Events</span>
-      <div class="filters">
-        <select id="f-status">
-          <option value="">all</option>
-          <option value="RECOGNIZED">recognized</option>
-          <option value="UNKNOWN">unknown</option>
-          <option value="UNVERIFIED">unverified</option>
-        </select>
-        <select id="f-alert">
-          <option value="">any alert</option>
-          <option value="open">open</option>
-          <option value="ack">ack</option>
-          <option value="closed">closed</option>
-        </select>
-        <input id="f-q" type="search" placeholder="name / code">
+  <div class="main-area">
+    <header class="topbar">
+      <h1 id="page-title">Dashboard</h1>
+      <div class="topbar-right">
+        <span class="status-pill" id="topbar-pill"><span class="dot" id="topbar-dot"></span><span id="topbar-status-text">Connecting…</span></span>
+        <button class="bell" id="bell-btn" title="Open alerts">
+          <svg viewBox="0 0 20 20"><path d="M5 8a5 5 0 0 1 10 0c0 3.5 1.3 4.7 1.3 4.7H3.7S5 11.5 5 8Z"/><path d="M8.2 15.5a1.8 1.8 0 0 0 3.6 0"/></svg>
+          <span class="bell-badge" id="bell-badge" hidden>0</span>
+        </button>
       </div>
+    </header>
+
+    <div class="page-body">
+
+      <!-- ============================================================ DASHBOARD -->
+      <section class="page active" id="page-dashboard">
+        <div class="status-line">
+          <span class="dot" id="live-dot"></span>
+          <span id="live-status-text">connecting…</span>
+          <span class="sep">·</span> camera <span class="mono" id="cam-label">cam-1</span>
+          <span class="sep">·</span> last updated <span class="mono" id="clock">--:--:--</span>
+        </div>
+
+        <section class="tiles" id="tiles">
+          <div class="tile"><div class="tl">Employees</div><div class="k" id="t-employees">–</div><div class="ts">enrolled</div></div>
+          <div class="tile good"><div class="tl">Recognized</div><div class="k" id="t-recognized">–</div><div class="ts">today</div></div>
+          <div class="tile crit"><div class="tl">Unknown</div><div class="k" id="t-unknown">–</div><div class="ts">today</div></div>
+          <div class="tile"><div class="tl">Events</div><div class="k" id="t-events">–</div><div class="ts">today</div></div>
+          <div class="tile warn"><div class="tl">Open Alerts</div><div class="k" id="t-alerts">–</div><div class="ts">requires attention</div></div>
+          <div class="tile"><div class="tl">Processing FPS</div><div class="k" id="t-fps">–</div><div class="ts">pipeline</div></div>
+          <div class="tile crit"><div class="tl">Shelves Low Stock</div><div class="k" id="t-shelves-low">–</div><div class="ts">need restock</div></div>
+          <div class="tile warn"><div class="tl">Zones Over Capacity</div><div class="k" id="t-queues-over">–</div><div class="ts">current</div></div>
+          <div class="tile good"><div class="tl">Entries</div><div class="k" id="t-entries">–</div><div class="ts">today</div></div>
+          <div class="tile"><div class="tl">Exits</div><div class="k" id="t-exits">–</div><div class="ts">today</div></div>
+          <div class="tile good"><div class="tl">In Building Now</div><div class="k" id="t-in-building">–</div><div class="ts">live</div></div>
+          <div class="tile"><div class="tl">Vehicles</div><div class="k" id="t-vehicles">–</div><div class="ts">today</div></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Live Camera</span><span class="mono muted" id="live-meta"></span></div>
+          <p class="note">This process streams one camera. A grid of many simultaneous cameras needs the
+            separate multi-camera architecture work noted in the project roadmap - not yet built.</p>
+          <div class="video-wrap"><img id="live-img" alt="live view" src="live.mjpg"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Active Alerts</span><span class="count-badge" id="alerts-count">0 Open</span></div>
+          <div class="alerts-list" id="alerts-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span>Recent Events</span>
+            <div class="filters">
+              <select id="f-status">
+                <option value="">all identities</option>
+                <option value="RECOGNIZED">recognized</option>
+                <option value="UNKNOWN">unknown</option>
+                <option value="UNVERIFIED">unverified</option>
+              </select>
+              <select id="f-alert">
+                <option value="">any alert</option>
+                <option value="open">open</option>
+                <option value="ack">ack</option>
+                <option value="closed">closed</option>
+              </select>
+              <input id="f-q" type="search" placeholder="name / code">
+            </div>
+          </div>
+          <div class="event-list" id="event-list"></div>
+        </section>
+      </section>
+
+      <!-- ============================================================ SHELVES -->
+      <section class="page" id="page-shelves">
+        <div class="page-header">
+          <p class="subtitle">One shelf = one region to count stock in. A camera dedicated to a single
+            shelf can leave the region as the whole frame. Counting runs on its own schedule
+            (<code>SHELF_CHECK_INTERVAL_S</code>), not every frame like person tracking.</p>
+          <button type="button" class="btn primary" id="shelf-add-btn">+ Add Shelf</button>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><span>Shelves</span></div>
+          <div id="shelves-list" class="shelves-list"></div>
+        </section>
+
+        <section class="card" id="shelf-form-card">
+          <div class="card-head"><span>Add shelf</span></div>
+          <form id="shelf-form" class="rule-form">
+            <label>Name<input name="name" required placeholder="e.g. Aisle 3 - Coke 500ml"></label>
+            <label>Camera ID<input name="camera_id" required placeholder="shelf-cam-1"></label>
+            <label>Product<input name="product_name" placeholder="optional"></label>
+            <label>Capacity (full count)<input name="capacity" type="number" min="1" value="100" required></label>
+            <label>Restock below (%)<input name="low_stock_threshold_pct" type="number" min="1" max="99" value="70"></label>
+            <label>Cooldown (s)<input name="cooldown_s" type="number" value="1800" min="0"></label>
+            <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
+            <button type="submit" class="btn primary">Add shelf</button>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Restock alerts</span></div>
+          <div id="shelf-alerts-list" class="rules-list"></div>
+        </section>
+      </section>
+
+      <!-- ============================================================ ZONES -->
+      <section class="page" id="page-zones">
+        <div class="page-header">
+          <p class="subtitle">Click the frame to add points (need 3+), then name it and
+            <b>Finish &amp; save</b>. Rules can then match "person in zone X". Optionally set a
+            <b>capacity</b> to also turn it into a queue/crowd zone - counted continuously and alerts
+            when more people are inside than the capacity allows.</p>
+        </div>
+
+        <div class="split">
+          <section class="card">
+            <div class="card-head"><span>Camera Preview</span></div>
+            <div class="zone-canvas-wrap">
+              <img id="zone-bg" alt="camera frame">
+              <canvas id="zone-canvas"></canvas>
+            </div>
+            <div class="zone-controls">
+              <input id="zone-name" placeholder="zone name" maxlength="40">
+              <input id="zone-color" type="color" value="#3ccfd7" title="zone colour">
+              <input id="zone-capacity" type="number" min="1" placeholder="capacity (optional)" title="set to also monitor crowd/queue occupancy">
+              <input id="zone-cooldown" type="number" min="0" value="60" placeholder="cooldown (s)" title="min seconds between over-capacity alerts">
+              <button type="button" class="btn" id="zone-undo">undo point</button>
+              <button type="button" class="btn" id="zone-cancel">clear</button>
+              <button type="button" class="btn" id="zone-refresh">↻ refresh frame</button>
+              <button type="button" class="btn primary" id="zone-finish">Finish &amp; save</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><span>Zone Configuration</span></div>
+            <p class="note">Existing zones</p>
+            <div id="zones-list" class="rules-list"></div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><span>Queue / crowd alerts</span></div>
+          <div id="queue-alerts-list" class="rules-list"></div>
+        </section>
+      </section>
+
+      <!-- ============================================================ FOOTFALL -->
+      <section class="page" id="page-footfall">
+        <div class="page-header">
+          <p class="subtitle">Click exactly <b>2 points</b> across a doorway/entrance to draw a counting
+            line. Each tracked person is counted once, only when they actually cross it - not once
+            per frame. The arrow shows which side counts as <b>IN</b>; use <b>flip direction</b> if
+            it's backwards.</p>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><span>Camera Preview</span></div>
+          <div class="zone-canvas-wrap">
+            <img id="line-bg" alt="camera frame">
+            <canvas id="line-canvas"></canvas>
+          </div>
+          <div class="zone-controls">
+            <input id="line-name" placeholder="line name" maxlength="40">
+            <input id="line-color" type="color" value="#e0a53a" title="line colour">
+            <button type="button" class="btn" id="line-flip">flip direction</button>
+            <button type="button" class="btn" id="line-cancel">clear</button>
+            <button type="button" class="btn" id="line-refresh">↻ refresh frame</button>
+            <button type="button" class="btn primary" id="line-finish">Finish &amp; save</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Existing lines</span></div>
+          <div id="lines-list" class="rules-list"></div>
+        </section>
+      </section>
+
+      <!-- ============================================================ ATTENDANCE -->
+      <section class="page" id="page-attendance">
+        <div class="page-header">
+          <p class="subtitle">Works off face recognition already running on every camera - no new
+            detection needed. Tag which cameras are doorways below; each employee's first
+            RECOGNIZED sighting today on an <b>entry</b> camera and last on an <b>exit</b> camera
+            become their entry/exit time. Cameras with no role (or "internal") are ignored.</p>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><span>Camera roles</span></div>
+          <div id="camera-roles-list" class="rules-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span>Attendance Log</span>
+            <div class="filters">
+              <input id="attendance-date" type="date">
+              <button type="button" class="btn" id="attendance-today">today</button>
+            </div>
+          </div>
+          <div id="attendance-list" class="rules-list"></div>
+        </section>
+      </section>
+
+      <!-- ============================================================ TRACK -->
+      <section class="page" id="page-track">
+        <div class="page-header">
+          <p class="subtitle">Select an employee to follow them across cameras - updates the instant
+            they're recognized on a different camera, no polling delay. Shows which camera by
+            name/label; this dashboard only streams its own camera's live video, so other
+            cameras aren't shown as video here, only identified by ID.</p>
+        </div>
+
+        <div class="split">
+          <section class="card">
+            <div class="card-head"><span>Employees</span></div>
+            <label class="field-label">Employee
+              <select id="track-employee"><option value="">— select —</option></select>
+            </label>
+            <div id="track-current" style="margin-top:14px"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><span>Movement Timeline</span></div>
+            <div id="track-path" class="rules-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============================================================ VEHICLES -->
+      <section class="page" id="page-vehicles">
+        <div class="page-header">
+          <p class="subtitle">A plate is only logged once a tracked vehicle's OCR readings agree by
+            majority vote across several frames - not a single reading. Still occasionally
+            misreads visually similar characters (0/O, 1/I) - always check the snapshot before
+            trusting a read. Camera roles (entry/exit) are shared with the Attendance panel.</p>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <span>Vehicle Log</span>
+            <div class="filters">
+              <input id="vehicle-log-date" type="date">
+              <button type="button" class="btn" id="vehicle-log-today">today</button>
+            </div>
+          </div>
+          <div id="vehicle-log-list" class="rules-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><span>Recent plate reads</span></div>
+          <div id="vehicle-events-list" class="event-list"></div>
+        </section>
+      </section>
+
+      <!-- ============================================================ RULES -->
+      <section class="page" id="page-rules">
+        <div class="page-header">
+          <p class="subtitle">A rule fires when <b>every</b> condition it sets matches an event. Leave a
+            condition blank to mean "any". First match wins per (rule, track) at most once per cooldown.</p>
+          <button type="button" class="btn primary" id="rule-add-btn">+ Create Rule</button>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><span>Rules</span></div>
+          <div id="rules-list" class="rules-list"></div>
+        </section>
+
+        <section class="card" id="rule-form-card">
+          <div class="card-head"><span>Add rule</span></div>
+          <form id="rule-form" class="rule-form">
+            <label>Name<input name="name" required placeholder="e.g. Unknown after hours"></label>
+            <label>Identity
+              <select name="identity_status">
+                <option value="">any</option>
+                <option value="UNKNOWN">UNKNOWN</option>
+                <option value="RECOGNIZED">RECOGNIZED</option>
+                <option value="UNVERIFIED">UNVERIFIED</option>
+              </select>
+            </label>
+            <label>Camera<input name="camera_id" placeholder="any"></label>
+            <label>Zone
+              <select name="zone"><option value="">any</option></select>
+            </label>
+            <label>From<input name="time_start" type="time" placeholder="any"></label>
+            <label>To<input name="time_end" type="time" placeholder="any"></label>
+            <label>Priority
+              <select name="priority">
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high" selected>high</option>
+                <option value="critical">critical</option>
+              </select>
+            </label>
+            <label>Cooldown (s)<input name="cooldown_s" type="number" value="120" min="0"></label>
+            <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
+            <button type="submit" class="btn primary">Add rule</button>
+          </form>
+        </section>
+      </section>
+
     </div>
-    <div class="event-list" id="event-list"></div>
-  </section>
-</main>
+  </div>
+</div>
 
 <div class="modal" id="modal" hidden>
   <div class="modal-card">
     <button class="close" id="modal-close">✕</button>
     <img id="modal-img" alt="evidence">
     <div class="modal-body" id="modal-body"></div>
-  </div>
-</div>
-
-<div class="modal" id="rules-modal" hidden>
-  <div class="modal-card rules-card">
-    <button class="close" id="rules-close">✕</button>
-    <h2>Rules</h2>
-    <p class="hint">A rule fires when <b>every</b> condition it sets matches an event. Leave a
-      condition blank to mean "any". First match wins per (rule, track) at most once per cooldown.</p>
-    <div id="rules-list" class="rules-list"></div>
-
-    <h3>Add rule</h3>
-    <form id="rule-form" class="rule-form">
-      <label>Name<input name="name" required placeholder="e.g. Unknown after hours"></label>
-      <label>Identity
-        <select name="identity_status">
-          <option value="">any</option>
-          <option value="UNKNOWN">UNKNOWN</option>
-          <option value="RECOGNIZED">RECOGNIZED</option>
-          <option value="UNVERIFIED">UNVERIFIED</option>
-        </select>
-      </label>
-      <label>Camera<input name="camera_id" placeholder="any"></label>
-      <label>Zone
-        <select name="zone"><option value="">any</option></select>
-      </label>
-      <label>From<input name="time_start" type="time" placeholder="any"></label>
-      <label>To<input name="time_end" type="time" placeholder="any"></label>
-      <label>Priority
-        <select name="priority">
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high" selected>high</option>
-          <option value="critical">critical</option>
-        </select>
-      </label>
-      <label>Cooldown (s)<input name="cooldown_s" type="number" value="120" min="0"></label>
-      <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
-      <button type="submit" class="btn primary">Add rule</button>
-    </form>
-  </div>
-</div>
-
-<div class="modal" id="zones-modal" hidden>
-  <div class="modal-card zones-card">
-    <button class="close" id="zones-close">✕</button>
-    <h2>Zones</h2>
-    <p class="hint">Click the frame to add points (need 3+), then name it and
-      <b>Finish &amp; save</b>. Rules can then match "person in zone X" (BRD §15).
-      Optionally set a <b>capacity</b> to also turn it into a queue/crowd zone - it'll be
-      counted continuously and alert when more people are inside than the capacity allows.</p>
-    <div class="zone-canvas-wrap">
-      <img id="zone-bg" alt="camera frame">
-      <canvas id="zone-canvas"></canvas>
-    </div>
-    <div class="zone-controls">
-      <input id="zone-name" placeholder="zone name" maxlength="40">
-      <input id="zone-color" type="color" value="#3ccfd7" title="zone colour">
-      <input id="zone-capacity" type="number" min="1" placeholder="capacity (optional)" title="set to also monitor crowd/queue occupancy">
-      <input id="zone-cooldown" type="number" min="0" value="60" placeholder="cooldown (s)" title="min seconds between over-capacity alerts">
-      <button type="button" class="btn" id="zone-undo">undo point</button>
-      <button type="button" class="btn" id="zone-cancel">clear</button>
-      <button type="button" class="btn" id="zone-refresh">↻ refresh frame</button>
-      <button type="button" class="btn primary" id="zone-finish">Finish &amp; save</button>
-    </div>
-    <h3>Existing zones</h3>
-    <div id="zones-list" class="rules-list"></div>
-
-    <h3>Queue / crowd alerts</h3>
-    <div id="queue-alerts-list" class="rules-list"></div>
-  </div>
-</div>
-
-<div class="modal" id="footfall-modal" hidden>
-  <div class="modal-card zones-card">
-    <button class="close" id="footfall-close">✕</button>
-    <h2>Footfall</h2>
-    <p class="hint">Click exactly <b>2 points</b> across a doorway/entrance to draw a counting
-      line. Each tracked person is counted once, only when they actually cross it - not once
-      per frame. The arrow shows which side counts as <b>IN</b>; use <b>flip direction</b> if
-      it's backwards.</p>
-    <div class="zone-canvas-wrap">
-      <img id="line-bg" alt="camera frame">
-      <canvas id="line-canvas"></canvas>
-    </div>
-    <div class="zone-controls">
-      <input id="line-name" placeholder="line name" maxlength="40">
-      <input id="line-color" type="color" value="#e0a53a" title="line colour">
-      <button type="button" class="btn" id="line-flip">flip direction</button>
-      <button type="button" class="btn" id="line-cancel">clear</button>
-      <button type="button" class="btn" id="line-refresh">↻ refresh frame</button>
-      <button type="button" class="btn primary" id="line-finish">Finish &amp; save</button>
-    </div>
-    <h3>Existing lines</h3>
-    <div id="lines-list" class="rules-list"></div>
-  </div>
-</div>
-
-<div class="modal" id="attendance-modal" hidden>
-  <div class="modal-card zones-card">
-    <button class="close" id="attendance-close">✕</button>
-    <h2>Attendance</h2>
-    <p class="hint">Works off face recognition already running on every camera - no new
-      detection needed. Tag which cameras are doorways below; each employee's first
-      RECOGNIZED sighting today on an <b>entry</b> camera and last on an <b>exit</b> camera
-      become their entry/exit time. Cameras with no role (or "internal") are ignored -
-      an office camera isn't a doorway. Only works for enrolled, recognized employees.</p>
-
-    <h3>Camera roles</h3>
-    <div id="camera-roles-list" class="rules-list"></div>
-
-    <h3>Daily attendance</h3>
-    <div class="zone-controls">
-      <input id="attendance-date" type="date">
-      <button type="button" class="btn" id="attendance-today">today</button>
-    </div>
-    <div id="attendance-list" class="rules-list"></div>
-  </div>
-</div>
-
-<div class="modal" id="track-modal" hidden>
-  <div class="modal-card rules-card">
-    <button class="close" id="track-close">✕</button>
-    <h2>Live Tracking</h2>
-    <p class="hint">Select an employee to follow them across cameras - updates the instant
-      they're recognized on a different camera, no polling delay. Shows which camera by
-      name/label; this dashboard only streams its own camera's live video, so other
-      cameras aren't shown as video here, only identified by ID.</p>
-    <label>Employee
-      <select id="track-employee"><option value="">— select —</option></select>
-    </label>
-    <div id="track-current" style="margin-top:14px"></div>
-    <h3>Recent path (today)</h3>
-    <div id="track-path" class="rules-list"></div>
-  </div>
-</div>
-
-<div class="modal" id="vehicles-modal" hidden>
-  <div class="modal-card zones-card">
-    <button class="close" id="vehicles-close">✕</button>
-    <h2>Vehicles</h2>
-    <p class="hint">A plate is only logged once a tracked vehicle's OCR readings agree by
-      majority vote across several frames - not a single reading. Still occasionally
-      misreads visually similar characters (0/O, 1/I) - always check the snapshot before
-      trusting a read. Camera roles (entry/exit) are shared with the Attendance panel.</p>
-
-    <h3>Vehicle log</h3>
-    <div class="zone-controls">
-      <input id="vehicle-log-date" type="date">
-      <button type="button" class="btn" id="vehicle-log-today">today</button>
-    </div>
-    <div id="vehicle-log-list" class="rules-list"></div>
-
-    <h3>Recent plate reads</h3>
-    <div id="vehicle-events-list" class="event-list"></div>
-  </div>
-</div>
-
-<div class="modal" id="shelves-modal" hidden>
-  <div class="modal-card zones-card">
-    <button class="close" id="shelves-close">✕</button>
-    <h2>Shelves</h2>
-    <p class="hint">One shelf = one region to count stock in. A camera dedicated to a single
-      shelf can leave the region as the whole frame. Counting runs on its own schedule
-      (<code>SHELF_CHECK_INTERVAL_S</code>), not every frame like person tracking.</p>
-
-    <div id="shelves-list" class="shelves-list"></div>
-
-    <h3>Add shelf</h3>
-    <form id="shelf-form" class="rule-form">
-      <label>Name<input name="name" required placeholder="e.g. Aisle 3 - Coke 500ml"></label>
-      <label>Camera ID<input name="camera_id" required placeholder="shelf-cam-1"></label>
-      <label>Product<input name="product_name" placeholder="optional"></label>
-      <label>Capacity (full count)<input name="capacity" type="number" min="1" value="100" required></label>
-      <label>Restock below (%)<input name="low_stock_threshold_pct" type="number" min="1" max="99" value="70"></label>
-      <label>Cooldown (s)<input name="cooldown_s" type="number" value="1800" min="0"></label>
-      <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
-      <button type="submit" class="btn primary">Add shelf</button>
-    </form>
-
-    <h3>Restock alerts</h3>
-    <div id="shelf-alerts-list" class="rules-list"></div>
   </div>
 </div>
 
