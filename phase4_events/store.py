@@ -172,6 +172,29 @@ CREATE TABLE IF NOT EXISTS camera_roles (
     updated_at  REAL NOT NULL
 );
 
+-- Phase 13: vehicle entry/exit tracking via license-plate OCR. A vehicle
+-- has no equivalent to Phase 3's face gallery - the plate TEXT itself is
+-- the identity (like employee_code), confirmed by majority vote across
+-- several OCR readings of the same tracked vehicle (see phase13_vehicle/
+-- ocr.py) before ever being written here, so one row = one committed
+-- sighting, not one row per frame. Reuses the same `camera_roles` table
+-- as Phase 11 - a camera's entry/exit role doesn't care whether it's
+-- watching people or vehicles.
+CREATE TABLE IF NOT EXISTS vehicle_events (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_uid      TEXT UNIQUE NOT NULL,
+    ts             REAL NOT NULL,
+    camera_id      TEXT NOT NULL,
+    track_id       INTEGER NOT NULL,
+    plate_number   TEXT NOT NULL,
+    vote_count     INTEGER NOT NULL,     -- how many OCR readings agreed on this plate
+    confidence     REAL NOT NULL,        -- average OCR confidence of the winning reading
+    snapshot       TEXT,
+    created_at     REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vehicle_events_camera ON vehicle_events(camera_id, ts);
+CREATE INDEX IF NOT EXISTS idx_vehicle_events_plate ON vehicle_events(plate_number, ts);
+
 -- Phase 8: shelf / inventory monitoring (BRD S8 Retail: shelf monitoring).
 -- A shelf is a counting region (same normalised-points idea as a zone) with
 -- an expected full count and a restock threshold - independent of `zones`,
@@ -343,6 +366,23 @@ class LineCrossing:
     track_id: int
     direction: str          # 'in' | 'out'
     ts: float
+    created_at: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class VehicleEvent:
+    id: int | None
+    event_uid: str
+    ts: float
+    camera_id: str
+    track_id: int
+    plate_number: str
+    vote_count: int
+    confidence: float
+    snapshot: str | None
     created_at: float
 
     def to_dict(self) -> dict:
@@ -834,6 +874,80 @@ class EventStore:
         ).fetchall()
         return [{"camera_id": r["camera_id"], "ts": r["ts"], "confidence": r["confidence"]} for r in rows]
 
+    # ------------------------------------------------------------- vehicles
+    def add_vehicle_event(self, *, ts: float, camera_id: str, track_id: int,
+                           plate_number: str, vote_count: int, confidence: float,
+                           snapshot: str | None) -> VehicleEvent:
+        import uuid
+        cur = self.conn.execute(
+            "INSERT INTO vehicle_events (event_uid, ts, camera_id, track_id, plate_number, "
+            "vote_count, confidence, snapshot, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (uuid.uuid4().hex, ts, camera_id, track_id, plate_number, vote_count,
+             confidence, snapshot, time.time()),
+        )
+        self.conn.commit()
+        row = self.conn.execute("SELECT * FROM vehicle_events WHERE id=?", (cur.lastrowid,)).fetchone()
+        return _row_to_vehicle_event(row)
+
+    def list_vehicle_events(self, *, camera_id: str | None = None,
+                             limit: int = 100) -> list[VehicleEvent]:
+        sql = "SELECT * FROM vehicle_events"
+        params: list = []
+        if camera_id:
+            sql += " WHERE camera_id = ?"; params.append(camera_id)
+        sql += " ORDER BY id DESC LIMIT ?"; params.append(max(1, min(limit, 1000)))
+        return [_row_to_vehicle_event(r) for r in self.conn.execute(sql, params).fetchall()]
+
+    def get_vehicle_event(self, event_id: int) -> VehicleEvent | None:
+        row = self.conn.execute("SELECT * FROM vehicle_events WHERE id=?", (event_id,)).fetchone()
+        return _row_to_vehicle_event(row) if row else None
+
+    def vehicle_log_for_date(self, date_str: str) -> list[dict]:
+        """Per plate: the earliest sighting on an entry-role camera and the
+        latest on an exit-role camera, for one calendar day - identical
+        semantics to attendance_for_date, reusing the same camera_roles
+        table, just keyed by plate_number instead of employee_code."""
+        day_start = datetime.strptime(date_str, "%Y-%m-%d").timestamp()
+        day_end = day_start + 86400
+        roles = self.camera_roles()
+
+        rows = self.conn.execute(
+            "SELECT plate_number, camera_id, ts FROM vehicle_events "
+            "WHERE ts >= ? AND ts < ? ORDER BY ts",
+            (day_start, day_end),
+        ).fetchall()
+
+        by_plate: dict[str, dict] = {}
+        for r in rows:
+            plate, cam, ts = r["plate_number"], r["camera_id"], r["ts"]
+            role = roles.get(cam, "internal")
+            rec = by_plate.setdefault(plate, {
+                "plate_number": plate,
+                "entry_ts": None, "entry_camera": None,
+                "exit_ts": None, "exit_camera": None,
+            })
+            if role in ("entry", "both") and rec["entry_ts"] is None:
+                rec["entry_ts"] = ts
+                rec["entry_camera"] = cam
+            if role in ("exit", "both"):
+                rec["exit_ts"] = ts
+                rec["exit_camera"] = cam
+        return sorted(by_plate.values(), key=lambda r: r["plate_number"])
+
+    def track_vehicle(self, plate_number: str, *, date_str: str | None = None,
+                       limit: int = 20) -> list[dict]:
+        """Every sighting of one vehicle, most recent first, across every
+        camera - mirrors track_employee."""
+        date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+        day_start = datetime.strptime(date_str, "%Y-%m-%d").timestamp()
+        day_end = day_start + 86400
+        rows = self.conn.execute(
+            "SELECT camera_id, ts, confidence FROM vehicle_events "
+            "WHERE plate_number=? AND ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+            (plate_number, day_start, day_end, max(1, min(limit, 200))),
+        ).fetchall()
+        return [{"camera_id": r["camera_id"], "ts": r["ts"], "confidence": r["confidence"]} for r in rows]
+
     # ----------------------------------------------------------------- shelves
     def add_shelf(self, *, camera_id: str, name: str, points: list, capacity: int,
                   product_name: str | None = None, low_stock_threshold: float = 0.7,
@@ -1105,6 +1219,10 @@ def _row_to_count_line(row: sqlite3.Row) -> CountLine:
 
 def _row_to_crossing(row: sqlite3.Row) -> LineCrossing:
     return LineCrossing(**{k: row[k] for k in row.keys()})
+
+
+def _row_to_vehicle_event(row: sqlite3.Row) -> VehicleEvent:
+    return VehicleEvent(**{k: row[k] for k in row.keys()})
 
 
 def _row_to_shelf(row: sqlite3.Row) -> Shelf:

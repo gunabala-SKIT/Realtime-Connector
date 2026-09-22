@@ -81,7 +81,7 @@ async function loadEvents() {
 
 async function refreshStats() {
   try {
-    const [stats, emp, live, shelves, zones, lines, attendanceToday] = await Promise.all([
+    const [stats, emp, live, shelves, zones, lines, attendanceToday, vehiclesToday] = await Promise.all([
       getJSON(`${API}/stats?window=today`),
       getJSON(`${API}/employees`),
       getJSON(`live/status`),
@@ -89,6 +89,7 @@ async function refreshStats() {
       getJSON(`${API}/zones/summary`).catch(() => ({ zones: [] })),
       getJSON(`${API}/count-lines/summary`).catch(() => ({ lines: [] })),
       getJSON(`${API}/attendance`).catch(() => ({ attendance: [] })),
+      getJSON(`${API}/vehicle-log`).catch(() => ({ log: [] })),
     ]);
     setTiles(stats, emp, live);
     const low = shelves.shelves.filter((s) => s.last_check && s.last_check.pct_full <= s.low_stock_threshold);
@@ -100,6 +101,7 @@ async function refreshStats() {
     $("#t-exits").textContent = lines.lines.length ? lines.lines.reduce((s, l) => s + l.exits, 0) : "–";
     const inBuilding = attendanceToday.attendance.filter((a) => a.entry_ts != null && a.exit_ts == null);
     $("#t-in-building").textContent = attendanceToday.attendance.length ? inBuilding.length : "–";
+    $("#t-vehicles").textContent = vehiclesToday.log.length || "–";
   } catch (e) { console.warn(e); }
 }
 
@@ -671,6 +673,60 @@ $("#track-employee").addEventListener("change", (e) => {
   trackedEmployee = e.target.value || null;
   loadTrack();
 });
+
+// ------------------------------------------------------------------ vehicles
+function vehicleLogRow(v) {
+  const entry = v.entry_ts != null ? `${fmtTime(v.entry_ts)} · ${esc(v.entry_camera)}` : "–";
+  const exit = v.exit_ts != null ? `${fmtTime(v.exit_ts)} · ${esc(v.exit_camera)}` : "–";
+  const status = v.entry_ts == null ? "" : v.exit_ts == null
+    ? `<span class="badge RECOGNIZED">on-site</span>` : `<span class="conf">departed</span>`;
+  return `<div class="rule-row">
+    <div>
+      <div class="name">${esc(v.plate_number)}</div>
+      <div class="cond">in: ${entry} &nbsp;·&nbsp; out: ${exit}</div>
+    </div>
+    ${status}
+    <span></span>
+  </div>`;
+}
+
+async function loadVehicleLog() {
+  const dateStr = $("#vehicle-log-date").value || todayStr();
+  const d = await getJSON(`${API}/vehicle-log?date=${encodeURIComponent(dateStr)}`);
+  $("#vehicle-log-list").innerHTML = d.log.length
+    ? d.log.map(vehicleLogRow).join("")
+    : `<p class="hint">No vehicles for this date.</p>`;
+}
+
+function vehicleEventRow(e) {
+  const snap = e.snapshot ? `${API}/vehicle-events/${e.id}/snapshot` : "";
+  return `<div class="event" style="cursor:default">
+    <img loading="lazy" src="${snap}" onerror="this.style.visibility='hidden'">
+    <div>
+      <div class="who">${esc(e.plate_number)}</div>
+      <div class="meta">${fmtTime(e.ts)} · ${esc(e.camera_id)} · ${e.vote_count} votes</div>
+    </div>
+    <div class="right"><span class="conf">${(e.confidence * 100).toFixed(0)}%</span></div>
+  </div>`;
+}
+
+async function loadVehicleEvents() {
+  const d = await getJSON(`${API}/vehicle-events?limit=50`);
+  $("#vehicle-events-list").innerHTML = d.events.length
+    ? d.events.map(vehicleEventRow).join("")
+    : `<p class="hint">No plate reads yet.</p>`;
+}
+
+$("#vehicles-btn").addEventListener("click", () => {
+  $("#vehicles-modal").hidden = false;
+  $("#vehicle-log-date").value = todayStr();
+  loadVehicleLog();
+  loadVehicleEvents();
+});
+$("#vehicles-close").addEventListener("click", () => ($("#vehicles-modal").hidden = true));
+$("#vehicles-modal").addEventListener("click", (e) => { if (e.target.id === "vehicles-modal") $("#vehicles-modal").hidden = true; });
+$("#vehicle-log-date").addEventListener("change", loadVehicleLog);
+$("#vehicle-log-today").addEventListener("click", () => { $("#vehicle-log-date").value = todayStr(); loadVehicleLog(); });
 
 // ---------------------------------------------------------------- shelves
 function stockColor(pct, threshold) {

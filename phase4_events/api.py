@@ -54,6 +54,11 @@ Endpoints
   GET    /attendance?date=YYYY-MM-DD   -> per-employee entry/exit across every camera, default today
   GET    /track/{employee_code}?date=&limit=  -> current camera + recent path (Phase 12), default today
 
+  GET    /vehicle-events?camera_id=&limit=    -> raw committed plate-read log (Phase 13)
+  GET    /vehicle-events/{id}/snapshot        -> image/jpeg
+  GET    /vehicle-log?date=YYYY-MM-DD         -> per-plate entry/exit across every camera, default today
+  GET    /track-vehicle/{plate}?date=&limit=  -> current camera + recent path for one plate
+
   WS   /ws/events                      -> pushes new events (with alert info + zone) as JSON, ~1 s
   WS   /ws/alerts                      -> pushes new alerts as JSON, ~1 s
 """
@@ -460,6 +465,53 @@ def track_employee(employee_code: str, date_str: str | None = Query(None, alias=
     current = path[0] if path else None
     return {
         "employee_code": employee_code,
+        "date": date_str,
+        "current_camera": current["camera_id"] if current else None,
+        "last_seen_ts": current["ts"] if current else None,
+        "count": len(path),
+        "path": path,
+    }
+
+
+# ---------------------------------------------------------------- vehicles
+@app.get("/vehicle-events")
+def list_vehicle_events(camera_id: str | None = None, limit: int = Query(100, ge=1, le=1000)) -> dict:
+    rows = store.list_vehicle_events(camera_id=camera_id, limit=limit)
+    return {"count": len(rows), "events": [e.to_dict() for e in rows]}
+
+
+@app.get("/vehicle-events/{event_id}/snapshot")
+def vehicle_event_snapshot(event_id: int):
+    ev = store.get_vehicle_event(event_id)
+    if not ev or not ev.snapshot:
+        raise HTTPException(404, "no snapshot for this event")
+    path = Path(cfg.snapshot_dir) / ev.snapshot
+    if not path.is_file():
+        raise HTTPException(404, "snapshot file missing")
+    return FileResponse(str(path), media_type="image/jpeg")
+
+
+@app.get("/vehicle-log")
+def vehicle_log(date_str: str | None = Query(None, alias="date")) -> dict:
+    date_str = date_str or date.today().isoformat()
+    try:
+        rows = store.vehicle_log_for_date(date_str)
+    except ValueError:
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+    return {"date": date_str, "count": len(rows), "log": rows}
+
+
+@app.get("/track-vehicle/{plate_number}")
+def track_vehicle(plate_number: str, date_str: str | None = Query(None, alias="date"),
+                   limit: int = Query(20, ge=1, le=200)) -> dict:
+    date_str = date_str or date.today().isoformat()
+    try:
+        path = store.track_vehicle(plate_number, date_str=date_str, limit=limit)
+    except ValueError:
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+    current = path[0] if path else None
+    return {
+        "plate_number": plate_number,
         "date": date_str,
         "current_camera": current["camera_id"] if current else None,
         "last_seen_ts": current["ts"] if current else None,

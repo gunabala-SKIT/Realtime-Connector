@@ -1,0 +1,9 @@
+# Phase 13 - vehicle entry/exit tracking. On top of Phases 1-5.
+#
+# easyocr pulls in opencv-python-headless, which conflicts with this
+# project's opencv-python (GUI-capable, needed for the --display debug
+# windows in phase1-4/8's standalone apps) - both provide the `cv2` module.
+# After installing easyocr, restore the GUI-capable build:
+#   pip uninstall -y opencv-python-headless
+#   pip install --force-reinstall --no-deps opencv-python==4.14.0.94
+easyocr>=1.7

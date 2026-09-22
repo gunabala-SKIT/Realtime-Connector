@@ -22,6 +22,7 @@
     <button class="btn" id="footfall-btn">⇅ Footfall</button>
     <button class="btn" id="attendance-btn">🕒 Attendance</button>
     <button class="btn" id="track-btn">🎯 Track</button>
+    <button class="btn" id="vehicles-btn">🚗 Vehicles</button>
     <button class="btn" id="rules-btn">⚙ Rules</button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
@@ -39,6 +40,7 @@
   <div class="tile good"><div class="k" id="t-entries">–</div><div class="l">Entries</div></div>
   <div class="tile"><div class="k" id="t-exits">–</div><div class="l">Exits</div></div>
   <div class="tile good"><div class="k" id="t-in-building">–</div><div class="l">In building now</div></div>
+  <div class="tile"><div class="k" id="t-vehicles">–</div><div class="l">Vehicles · today</div></div>
 </section>
 
 <main>
@@ -211,6 +213,27 @@
     <div id="track-current" style="margin-top:14px"></div>
     <h3>Recent path (today)</h3>
     <div id="track-path" class="rules-list"></div>
+  </div>
+</div>
+
+<div class="modal" id="vehicles-modal" hidden>
+  <div class="modal-card zones-card">
+    <button class="close" id="vehicles-close">✕</button>
+    <h2>Vehicles</h2>
+    <p class="hint">A plate is only logged once a tracked vehicle's OCR readings agree by
+      majority vote across several frames - not a single reading. Still occasionally
+      misreads visually similar characters (0/O, 1/I) - always check the snapshot before
+      trusting a read. Camera roles (entry/exit) are shared with the Attendance panel.</p>
+
+    <h3>Vehicle log</h3>
+    <div class="zone-controls">
+      <input id="vehicle-log-date" type="date">
+      <button type="button" class="btn" id="vehicle-log-today">today</button>
+    </div>
+    <div id="vehicle-log-list" class="rules-list"></div>
+
+    <h3>Recent plate reads</h3>
+    <div id="vehicle-events-list" class="event-list"></div>
   </div>
 </div>
 
