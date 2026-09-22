@@ -14,27 +14,22 @@ function eventRow(e) {
   const who = e.identity_status === "RECOGNIZED"
     ? esc(e.employee_name || e.employee_code)
     : e.identity_status;
-  const conf = e.confidence != null ? e.confidence.toFixed(2) : "–";
   const snap = e.snapshot ? `${API}/events/${e.id}/snapshot` : "";
   const alert = e.alert_status === "open"
     ? `<div class="alertbtns" data-id="${e.id}">
          <button data-act="ack">ack</button><button data-act="closed">close</button></div>`
     : (e.alert_status !== "none" ? `<span class="conf">${esc(e.alert_status)}</span>` : "");
-  const prio = e.alert_priority
-    ? `<span class="prio prio-${e.alert_priority}">${e.alert_priority}</span>` : "";
-  return `<div class="event" data-id="${e.id}">
-    <img loading="lazy" src="${snap}" onerror="this.style.visibility='hidden'">
-    <div>
-      <div class="who">${who}</div>
-      <div class="meta">${fmtTime(e.ts)} · ${esc(e.camera_id)} · track ${e.track_id}${e.zone ? " · zone " + esc(e.zone) : ""}</div>
-    </div>
-    <div class="right">
-      <span class="badge ${e.identity_status}">${e.identity_status}</span>
-      ${prio}
-      <span class="conf">${conf}</span>
-      ${alert}
-    </div>
-  </div>`;
+  return `<tr class="event-row" data-id="${e.id}">
+    <td><div style="display:flex;align-items:center;gap:10px">
+      <img class="thumb" loading="lazy" src="${snap}" onerror="this.style.visibility='hidden'">
+      <div><div class="cell-title">${who}</div><span class="badge ${e.identity_status}">${e.identity_status}</span></div>
+    </div></td>
+    <td class="cell-mono">${esc(e.camera_id)}</td>
+    <td class="cell-muted">track ${e.track_id}</td>
+    <td class="cell-muted">${e.zone ? esc(e.zone) : "—"}</td>
+    <td class="cell-muted">${fmtTime(e.ts)}</td>
+    <td>${alert}</td>
+  </tr>`;
 }
 
 function renderEvents() {
@@ -47,7 +42,7 @@ function renderEvents() {
   );
   $("#event-list").innerHTML = rows.length
     ? rows.map(eventRow).join("")
-    : `<div class="event" style="cursor:default"><div></div><div class="meta">no matching events</div><div></div></div>`;
+    : `<tr><td colspan="6" class="cell-muted">no matching events</td></tr>`;
 }
 
 function setTiles(stats, emp, live) {
@@ -123,7 +118,7 @@ function alertCard(a) {
   return `<div class="alert-card prio-${a.priority}" data-id="${a.id}" data-event="${a.event_id}">
     <div>
       <div class="name">${esc(a.rule_name || "Alert")} <span class="prio prio-${a.priority}">${a.priority}</span></div>
-      <div class="cond">${esc(a.camera_id)}${who} · ${relTimeShort(a.created_at)}</div>
+      <div class="cond"><span class="mono">${esc(a.camera_id)}</span>${who} · ${relTimeShort(a.created_at)}</div>
     </div>
     <div class="actions">
       <button data-act="ack">Acknowledge</button>
@@ -244,14 +239,17 @@ function condSummary(r) {
 }
 
 function ruleRow(r) {
-  return `<div class="rule-row" data-id="${r.id}">
-    <div>
-      <div class="name">${esc(r.name)} <span class="prio prio-${r.priority}">${r.priority}</span></div>
-      <div class="cond">${condSummary(r)}</div>
-    </div>
-    <label title="enabled"><input type="checkbox" class="toggle" ${r.enabled ? "checked" : ""}></label>
-    <button data-act="delete">delete</button>
-  </div>`;
+  const trigger = r.identity_status || "any identity";
+  const where = [r.camera_id || "any camera", r.zone ? `zone=${esc(r.zone)}` : null].filter(Boolean).join(" · ");
+  const when = (r.time_start && r.time_end) ? `${r.time_start}–${r.time_end}` : "";
+  return `<tr data-id="${r.id}" data-enabled="${r.enabled ? "1" : "0"}">
+    <td><div class="cell-title">${esc(r.name)}</div>${when ? `<div class="cell-sub">${when}</div>` : ""}</td>
+    <td class="cell-muted">${esc(trigger)}</td>
+    <td class="cell-muted">${where}</td>
+    <td><span class="prio prio-${r.priority}">${r.priority}</span></td>
+    <td><button class="badge-btn" data-act="toggle"><span class="badge ${r.enabled ? "badge-good" : "badge-muted"}">${r.enabled ? "Active" : "Inactive"}</span></button></td>
+    <td class="cell-actions"><button class="btn-link danger" data-act="delete">Delete</button></td>
+  </tr>`;
 }
 
 async function loadRules() {
@@ -259,7 +257,7 @@ async function loadRules() {
   state.zones = zonesD.zones;
   $("#rules-list").innerHTML = rulesD.rules.length
     ? rulesD.rules.map(ruleRow).join("")
-    : `<p class="hint">No rules yet - nothing will raise an alert.</p>`;
+    : `<tr><td colspan="6" class="cell-muted">No rules yet - nothing will raise an alert.</td></tr>`;
   const sel = document.querySelector('select[name=zone]');
   const cur = sel.value;
   sel.innerHTML = `<option value="">any</option>` +
@@ -268,15 +266,18 @@ async function loadRules() {
 }
 
 $("#rules-list").addEventListener("click", async (e) => {
-  const row = e.target.closest(".rule-row");
-  if (!row) return;
+  const row = e.target.closest("tr[data-id]");
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (!row || !act) return;
   const id = row.dataset.id;
-  if (e.target.matches(".toggle")) {
+  if (act === "toggle") {
+    const enabled = row.dataset.enabled !== "1";
     await fetch(`${API}/rules/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: e.target.checked }),
+      body: JSON.stringify({ enabled }),
     });
-  } else if (e.target.dataset.act === "delete") {
+    loadRules();
+  } else if (act === "delete") {
     await fetch(`${API}/rules/${id}`, { method: "DELETE" });
     loadRules();
   }
@@ -299,7 +300,7 @@ $("#rule-form").addEventListener("submit", async (e) => {
   const r = await fetch(`${API}/rules`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
-  if (r.ok) { e.target.reset(); loadRules(); }
+  if (r.ok) { e.target.reset(); closeDrawer("rule-drawer"); loadRules(); }
   else console.warn("add rule failed", await r.text());
 });
 
@@ -604,19 +605,29 @@ $("#camera-roles-list").addEventListener("change", async (e) => {
   loadAttendance();   // roles changed - the currently viewed day's entry/exit may too
 });
 
+const AVATAR_COLORS = ["#3b82f6", "#2ea043", "#d29922", "#db6d28", "#a371f7", "#f85149"];
+function initialsAvatar(name) {
+  const label = (name || "?").trim();
+  const initials = label.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || "?";
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0;
+  const color = AVATAR_COLORS[hash % AVATAR_COLORS.length];
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+    border-radius:999px;background:${color}30;color:${color};font-size:.68rem;font-weight:700;flex:none">${esc(initials)}</span>`;
+}
+
 function attendanceRow(a) {
-  const entry = a.entry_ts != null ? `${fmtTime(a.entry_ts)} · ${esc(a.entry_camera)}` : "–";
-  const exit = a.exit_ts != null ? `${fmtTime(a.exit_ts)} · ${esc(a.exit_camera)}` : "–";
-  const status = a.entry_ts == null ? "" : a.exit_ts == null
-    ? `<span class="badge RECOGNIZED">present</span>` : `<span class="conf">departed</span>`;
-  return `<div class="rule-row">
-    <div>
-      <div class="name">${esc(a.employee_name || a.employee_code)}</div>
-      <div class="cond">in: ${entry} &nbsp;·&nbsp; out: ${exit}</div>
-    </div>
-    ${status}
-    <span></span>
-  </div>`;
+  const entry = a.entry_ts != null ? `${fmtTime(a.entry_ts)} · ${esc(a.entry_camera)}` : "—";
+  const exit = a.exit_ts != null ? `${fmtTime(a.exit_ts)} · ${esc(a.exit_camera)}` : "—";
+  const status = a.entry_ts == null ? `<span class="badge badge-muted">not detected</span>` : a.exit_ts == null
+    ? `<span class="badge badge-good">present</span>` : `<span class="badge badge-muted">departed</span>`;
+  return `<tr>
+    <td><div style="display:flex;align-items:center;gap:10px">${initialsAvatar(a.employee_name || a.employee_code)}
+      <span class="cell-title">${esc(a.employee_name || a.employee_code)}</span></div></td>
+    <td class="cell-muted">${entry}</td>
+    <td class="cell-muted">${exit}</td>
+    <td>${status}</td>
+  </tr>`;
 }
 
 async function loadAttendance() {
@@ -624,7 +635,7 @@ async function loadAttendance() {
   const d = await getJSON(`${API}/attendance?date=${encodeURIComponent(dateStr)}`);
   $("#attendance-list").innerHTML = d.attendance.length
     ? d.attendance.map(attendanceRow).join("")
-    : `<p class="hint">No recognized employees for this date.</p>`;
+    : `<tr><td colspan="4" class="cell-muted">No recognized employees for this date.</td></tr>`;
 }
 
 $("#attendance-date").addEventListener("change", loadAttendance);
@@ -693,18 +704,16 @@ $("#track-employee").addEventListener("change", (e) => {
 
 // ------------------------------------------------------------------ vehicles
 function vehicleLogRow(v) {
-  const entry = v.entry_ts != null ? `${fmtTime(v.entry_ts)} · ${esc(v.entry_camera)}` : "–";
-  const exit = v.exit_ts != null ? `${fmtTime(v.exit_ts)} · ${esc(v.exit_camera)}` : "–";
-  const status = v.entry_ts == null ? "" : v.exit_ts == null
-    ? `<span class="badge RECOGNIZED">on-site</span>` : `<span class="conf">departed</span>`;
-  return `<div class="rule-row">
-    <div>
-      <div class="name">${esc(v.plate_number)}</div>
-      <div class="cond">in: ${entry} &nbsp;·&nbsp; out: ${exit}</div>
-    </div>
-    ${status}
-    <span></span>
-  </div>`;
+  const entry = v.entry_ts != null ? `${fmtTime(v.entry_ts)} · ${esc(v.entry_camera)}` : "—";
+  const exit = v.exit_ts != null ? `${fmtTime(v.exit_ts)} · ${esc(v.exit_camera)}` : "—";
+  const status = v.entry_ts == null ? `<span class="badge badge-muted">unknown</span>` : v.exit_ts == null
+    ? `<span class="badge badge-good">on-site</span>` : `<span class="badge badge-muted">departed</span>`;
+  return `<tr>
+    <td class="cell-mono cell-title">${esc(v.plate_number)}</td>
+    <td class="cell-muted">${entry}</td>
+    <td class="cell-muted">${exit}</td>
+    <td>${status}</td>
+  </tr>`;
 }
 
 async function loadVehicleLog() {
@@ -712,26 +721,26 @@ async function loadVehicleLog() {
   const d = await getJSON(`${API}/vehicle-log?date=${encodeURIComponent(dateStr)}`);
   $("#vehicle-log-list").innerHTML = d.log.length
     ? d.log.map(vehicleLogRow).join("")
-    : `<p class="hint">No vehicles for this date.</p>`;
+    : `<tr><td colspan="4" class="cell-muted">No vehicles for this date.</td></tr>`;
 }
 
 function vehicleEventRow(e) {
   const snap = e.snapshot ? `${API}/vehicle-events/${e.id}/snapshot` : "";
-  return `<div class="event" style="cursor:default">
-    <img loading="lazy" src="${snap}" onerror="this.style.visibility='hidden'">
-    <div>
-      <div class="who">${esc(e.plate_number)}</div>
-      <div class="meta">${fmtTime(e.ts)} · ${esc(e.camera_id)} · ${e.vote_count} votes</div>
-    </div>
-    <div class="right"><span class="conf">${(e.confidence * 100).toFixed(0)}%</span></div>
-  </div>`;
+  return `<tr>
+    <td><img class="thumb" loading="lazy" src="${snap}" onerror="this.style.visibility='hidden'"></td>
+    <td class="cell-mono cell-title">${esc(e.plate_number)}</td>
+    <td class="cell-mono">${esc(e.camera_id)}</td>
+    <td class="cell-muted">${fmtTime(e.ts)}</td>
+    <td class="cell-muted">${e.vote_count} votes</td>
+    <td class="conf">${(e.confidence * 100).toFixed(0)}%</td>
+  </tr>`;
 }
 
 async function loadVehicleEvents() {
   const d = await getJSON(`${API}/vehicle-events?limit=50`);
   $("#vehicle-events-list").innerHTML = d.events.length
     ? d.events.map(vehicleEventRow).join("")
-    : `<p class="hint">No plate reads yet.</p>`;
+    : `<tr><td colspan="6" class="cell-muted">No plate reads yet.</td></tr>`;
 }
 
 $("#vehicle-log-date").addEventListener("change", loadVehicleLog);
@@ -748,24 +757,24 @@ function shelfRow(s) {
   const chk = s.last_check;
   const pct = chk ? chk.pct_full : null;
   const bar = pct != null
-    ? `<div><div class="stockbar"><i style="width:${Math.min(100, pct * 100)}%;background:${stockColor(pct, s.low_stock_threshold)}"></i></div>
-         <div class="stockpct">${chk.detected_count}/${s.capacity} · ${(pct * 100).toFixed(0)}%</div></div>`
+    ? `<div class="stockbar"><i style="width:${Math.min(100, pct * 100)}%;background:${stockColor(pct, s.low_stock_threshold)}"></i></div>
+       <div class="stockpct">${chk.detected_count}/${s.capacity} · ${(pct * 100).toFixed(0)}%</div>`
     : `<div class="stockpct">no checks yet</div>`;
-  return `<div class="shelf-row" data-id="${s.id}">
-    <div>
-      <div class="name">${esc(s.name)}</div>
-      <div class="cond">${esc(s.camera_id)}${s.product_name ? " · " + esc(s.product_name) : ""} · restock &le; ${(s.low_stock_threshold * 100).toFixed(0)}%</div>
-    </div>
-    ${bar}
-    <button data-act="delete">delete</button>
-  </div>`;
+  return `<tr data-id="${s.id}">
+    <td class="cell-title">${esc(s.name)}</td>
+    <td class="cell-mono">${esc(s.camera_id)}</td>
+    <td class="cell-muted">${s.product_name ? esc(s.product_name) : "—"}</td>
+    <td class="cell-muted">${s.capacity}</td>
+    <td>${bar}</td>
+    <td class="cell-actions"><button class="btn-link danger" data-act="delete">Delete</button></td>
+  </tr>`;
 }
 
 async function loadShelves() {
   const d = await getJSON(`${API}/shelves/summary`);
   $("#shelves-list").innerHTML = d.shelves.length
     ? d.shelves.map(shelfRow).join("")
-    : `<p class="hint">No shelves yet - add one below.</p>`;
+    : `<tr><td colspan="6" class="cell-muted">No shelves yet - add one above.</td></tr>`;
 }
 
 function shelfAlertRow(a) {
@@ -789,7 +798,7 @@ async function loadShelfAlerts() {
 }
 
 $("#shelves-list").addEventListener("click", async (e) => {
-  const row = e.target.closest(".shelf-row");
+  const row = e.target.closest("tr[data-id]");
   if (!row || e.target.dataset.act !== "delete") return;
   await fetch(`${API}/shelves/${row.dataset.id}`, { method: "DELETE" });
   loadShelves();
@@ -821,7 +830,7 @@ $("#shelf-form").addEventListener("submit", async (e) => {
   const r = await fetch(`${API}/shelves`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
-  if (r.ok) { e.target.reset(); loadShelves(); }
+  if (r.ok) { e.target.reset(); closeDrawer("shelf-drawer"); loadShelves(); }
   else alert("Could not add shelf: " + (await r.text()));
 });
 
@@ -829,7 +838,7 @@ $("#shelf-form").addEventListener("submit", async (e) => {
 $("#event-list").addEventListener("click", (ev) => {
   const btns = ev.target.closest(".alertbtns");
   if (btns) { ev.stopPropagation(); return setAlert(btns.dataset.id, ev.target.dataset.act); }
-  const row = ev.target.closest(".event[data-id]");
+  const row = ev.target.closest(".event-row[data-id]");
   if (row) openModal(row.dataset.id);
 });
 $("#modal-close").addEventListener("click", () => ($("#modal").hidden = true));
@@ -867,14 +876,19 @@ function showPage(name) {
 
 document.querySelectorAll(".nav-item").forEach((el) => el.addEventListener("click", () => showPage(el.dataset.page)));
 
-$("#shelf-add-btn").addEventListener("click", () => {
-  $("#shelf-form-card").scrollIntoView({ behavior: "smooth", block: "start" });
-  $("#shelf-form input[name=name]").focus();
-});
-$("#rule-add-btn").addEventListener("click", () => {
-  $("#rule-form-card").scrollIntoView({ behavior: "smooth", block: "start" });
-  $("#rule-form input[name=name]").focus();
-});
+function openDrawer(id) {
+  $("#" + id).hidden = false;
+  $("#" + id).querySelector("input, select, textarea")?.focus();
+}
+function closeDrawer(id) { $("#" + id).hidden = true; }
+
+$("#shelf-add-btn").addEventListener("click", () => openDrawer("shelf-drawer"));
+$("#shelf-drawer-close").addEventListener("click", () => closeDrawer("shelf-drawer"));
+$("#shelf-drawer").addEventListener("click", (e) => { if (e.target.id === "shelf-drawer") closeDrawer("shelf-drawer"); });
+
+$("#rule-add-btn").addEventListener("click", () => openDrawer("rule-drawer"));
+$("#rule-drawer-close").addEventListener("click", () => closeDrawer("rule-drawer"));
+$("#rule-drawer").addEventListener("click", (e) => { if (e.target.id === "rule-drawer") closeDrawer("rule-drawer"); });
 
 setInterval(() => ($("#clock").textContent = new Date().toLocaleTimeString([], { hour12: false })), 1000);
 setInterval(refreshStats, 3000);

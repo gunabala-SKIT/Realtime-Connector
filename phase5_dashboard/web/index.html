@@ -6,7 +6,7 @@
 <title>Reality Connector</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -122,7 +122,12 @@
               <input id="f-q" type="search" placeholder="name / code">
             </div>
           </div>
-          <div class="event-list" id="event-list"></div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Event</th><th>Camera</th><th>Person</th><th>Location</th><th>Time</th><th>Status</th></tr></thead>
+              <tbody id="event-list"></tbody>
+            </table>
+          </div>
         </section>
       </section>
 
@@ -136,12 +141,23 @@
         </div>
 
         <section class="card">
-          <div class="card-head"><span>Shelves</span></div>
-          <div id="shelves-list" class="shelves-list"></div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Shelf</th><th>Camera</th><th>Product</th><th>Capacity</th><th>Stock</th><th></th></tr></thead>
+              <tbody id="shelves-list"></tbody>
+            </table>
+          </div>
         </section>
 
-        <section class="card" id="shelf-form-card">
-          <div class="card-head"><span>Add shelf</span></div>
+        <section class="card">
+          <div class="card-head"><span>Restock alerts</span></div>
+          <div id="shelf-alerts-list" class="rules-list"></div>
+        </section>
+      </section>
+
+      <div class="drawer-overlay" id="shelf-drawer" hidden>
+        <div class="drawer">
+          <div class="drawer-head"><h2>Add Shelf</h2><button type="button" id="shelf-drawer-close">✕</button></div>
           <form id="shelf-form" class="rule-form">
             <label>Name<input name="name" required placeholder="e.g. Aisle 3 - Coke 500ml"></label>
             <label>Camera ID<input name="camera_id" required placeholder="shelf-cam-1"></label>
@@ -152,13 +168,8 @@
             <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
             <button type="submit" class="btn primary">Add shelf</button>
           </form>
-        </section>
-
-        <section class="card">
-          <div class="card-head"><span>Restock alerts</span></div>
-          <div id="shelf-alerts-list" class="rules-list"></div>
-        </section>
-      </section>
+        </div>
+      </div>
 
       <!-- ============================================================ ZONES -->
       <section class="page" id="page-zones">
@@ -170,30 +181,34 @@
         </div>
 
         <div class="split">
-          <section class="card">
-            <div class="card-head"><span>Camera Preview</span></div>
+          <section class="panel-card">
+            <div class="card-head"><span>Camera Preview</span><button type="button" class="btn-link" id="zone-refresh">↻ refresh frame</button></div>
             <div class="zone-canvas-wrap">
               <img id="zone-bg" alt="camera frame">
               <canvas id="zone-canvas"></canvas>
             </div>
+          </section>
+
+          <section class="panel-card">
+            <div class="card-head"><span>Zone Configuration</span></div>
             <div class="zone-controls">
               <input id="zone-name" placeholder="zone name" maxlength="40">
-              <input id="zone-color" type="color" value="#3ccfd7" title="zone colour">
+              <input id="zone-color" type="color" value="#3b82f6" title="zone colour">
               <input id="zone-capacity" type="number" min="1" placeholder="capacity (optional)" title="set to also monitor crowd/queue occupancy">
               <input id="zone-cooldown" type="number" min="0" value="60" placeholder="cooldown (s)" title="min seconds between over-capacity alerts">
+            </div>
+            <div class="zone-controls">
               <button type="button" class="btn" id="zone-undo">undo point</button>
               <button type="button" class="btn" id="zone-cancel">clear</button>
-              <button type="button" class="btn" id="zone-refresh">↻ refresh frame</button>
               <button type="button" class="btn primary" id="zone-finish">Finish &amp; save</button>
             </div>
           </section>
-
-          <section class="card">
-            <div class="card-head"><span>Zone Configuration</span></div>
-            <p class="note">Existing zones</p>
-            <div id="zones-list" class="rules-list"></div>
-          </section>
         </div>
+
+        <section class="card">
+          <div class="card-head"><span>Existing Zones</span></div>
+          <div id="zones-list" class="rules-list"></div>
+        </section>
 
         <section class="card">
           <div class="card-head"><span>Queue / crowd alerts</span></div>
@@ -210,18 +225,17 @@
             it's backwards.</p>
         </div>
 
-        <section class="card">
-          <div class="card-head"><span>Camera Preview</span></div>
+        <section class="panel-card">
+          <div class="card-head"><span>Camera Preview</span><button type="button" class="btn-link" id="line-refresh">↻ refresh frame</button></div>
           <div class="zone-canvas-wrap">
             <img id="line-bg" alt="camera frame">
             <canvas id="line-canvas"></canvas>
           </div>
           <div class="zone-controls">
             <input id="line-name" placeholder="line name" maxlength="40">
-            <input id="line-color" type="color" value="#e0a53a" title="line colour">
+            <input id="line-color" type="color" value="#3b82f6" title="line colour">
             <button type="button" class="btn" id="line-flip">flip direction</button>
             <button type="button" class="btn" id="line-cancel">clear</button>
-            <button type="button" class="btn" id="line-refresh">↻ refresh frame</button>
             <button type="button" class="btn primary" id="line-finish">Finish &amp; save</button>
           </div>
         </section>
@@ -254,7 +268,12 @@
               <button type="button" class="btn" id="attendance-today">today</button>
             </div>
           </div>
-          <div id="attendance-list" class="rules-list"></div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Employee</th><th>First Seen</th><th>Last Seen</th><th>Status</th></tr></thead>
+              <tbody id="attendance-list"></tbody>
+            </table>
+          </div>
         </section>
       </section>
 
@@ -300,12 +319,22 @@
               <button type="button" class="btn" id="vehicle-log-today">today</button>
             </div>
           </div>
-          <div id="vehicle-log-list" class="rules-list"></div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Plate</th><th>Entry</th><th>Exit</th><th>Status</th></tr></thead>
+              <tbody id="vehicle-log-list"></tbody>
+            </table>
+          </div>
         </section>
 
         <section class="card">
           <div class="card-head"><span>Recent plate reads</span></div>
-          <div id="vehicle-events-list" class="event-list"></div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th></th><th>Plate</th><th>Camera</th><th>Time</th><th>Votes</th><th>Confidence</th></tr></thead>
+              <tbody id="vehicle-events-list"></tbody>
+            </table>
+          </div>
         </section>
       </section>
 
@@ -318,12 +347,18 @@
         </div>
 
         <section class="card">
-          <div class="card-head"><span>Rules</span></div>
-          <div id="rules-list" class="rules-list"></div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Rule</th><th>Trigger</th><th>Camera / Zone</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+              <tbody id="rules-list"></tbody>
+            </table>
+          </div>
         </section>
+      </section>
 
-        <section class="card" id="rule-form-card">
-          <div class="card-head"><span>Add rule</span></div>
+      <div class="drawer-overlay" id="rule-drawer" hidden>
+        <div class="drawer">
+          <div class="drawer-head"><h2>Create Rule</h2><button type="button" id="rule-drawer-close">✕</button></div>
           <form id="rule-form" class="rule-form">
             <label>Name<input name="name" required placeholder="e.g. Unknown after hours"></label>
             <label>Identity
@@ -352,8 +387,8 @@
             <label class="checkbox"><input name="notify_email" type="checkbox"> email</label>
             <button type="submit" class="btn primary">Add rule</button>
           </form>
-        </section>
-      </section>
+        </div>
+      </div>
 
     </div>
   </div>
