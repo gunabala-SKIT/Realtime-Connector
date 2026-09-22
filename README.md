@@ -38,3 +38,46 @@ python -m phase1_camera.app
 ```
 
 Full instructions: [`phase1_camera/README.md`](phase1_camera/README.md).
+
+## Moving to another machine
+
+The code lives entirely in git; several things don't, since they're either
+secrets, personal data, or auto-generated (`.gitignore`) — copy these
+separately if you want the new machine fully equivalent, not just running
+the same code:
+
+| What | Where | Why it's not in git |
+|---|---|---|
+| Camera settings + credentials | `phase1_camera/.env` | secrets |
+| Enrolled employee faces | `phase3_identity/gallery_chroma/` | personal biometric data — can't be regenerated, only re-enrolled |
+| Enrollment source photos (only if you want to re-enroll instead) | `img/`, `enroll_photos/` | personal photos |
+| Event history (optional) | `phase4_events/events.db` | local runtime data, regenerates empty on first run |
+| Model weights (optional — auto-download on first run) | `*.pt` files | large binaries, auto-fetched |
+
+### Getting the code across
+
+No git remote is configured on this repo yet (`git remote -v` is empty) — pick one:
+
+**A. Push to a private GitHub/GitLab repo** (best for ongoing work on both machines):
+```bash
+gh repo create reality-connector --private --source=. --push
+```
+Then on the other machine: `git clone <url>`.
+
+**B. One-time offline transfer** (USB drive, no account needed) — carries full commit history, same as a normal clone:
+```bash
+git bundle create reality-connector.bundle --all
+```
+Copy the file over, then on the other machine: `git clone reality-connector.bundle reality-connector`.
+
+Either way, copy the files from the table above separately — a clone/bundle only includes what git tracks.
+
+### Setting up the new machine
+
+1. Python 3.12, Windows (this project is Windows-native — PowerShell, backslash paths — not tested on Linux/Docker).
+2. Run `nvidia-smi` on the new machine **before** installing anything. This project is pinned to CUDA 12.4 / driver-560-class hardware (`onnxruntime-gpu==1.20.2` needs driver <580); a different GPU/driver may need different pins throughout the file below.
+3. Follow the install sequence at the top of [`requirements-freeze.txt`](requirements-freeze.txt) exactly — order matters (torch needs its own CUDA index URL; two packages need a fix-up *after* the bulk install, the same "a later package silently shadows a pinned GPU one" pattern documented in several phase READMEs, e.g. [`phase5_dashboard/requirements.txt`](phase5_dashboard/requirements.txt), [`phase13_vehicle/requirements.txt`](phase13_vehicle/requirements.txt)).
+4. Copy `.env`, `gallery_chroma/`, and anything else you want from the table above into place.
+5. Verify: `python -m phase1_camera.check_network`, then `python -m phase5_dashboard` and confirm the dashboard loads at `http://127.0.0.1:8000` with your enrolled employees showing (`gallery=N` in the startup log, N > 0 if you copied the gallery over).
+
+If you'll keep using Claude Code on the new machine too: this session's accumulated memory (lessons learned, gotchas) lives outside the repo, in `~/.claude/projects/.../memory/` on *this* machine — copy that folder to the equivalent path on the new one if you want a fresh session to start with the same context. Not strictly required: every phase's README already documents its own gotchas and lessons in similar detail, so a fresh session reading the repo can reconstruct most of it on its own.
