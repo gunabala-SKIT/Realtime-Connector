@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -466,12 +467,60 @@ class Alert:
         return asdict(self)
 
 
+class _ThreadSafeConnection:
+    """Serializes execute/executemany/commit on a `check_same_thread=False` connection.
+
+    WAL mode (set below) is what makes the *file* safe for concurrent readers/writers
+    across processes - it says nothing about sharing one Python `sqlite3.Connection`
+    object across threads. FastAPI dispatches each request to its own threadpool
+    thread, and every route handler calls through this same EventStore/connection,
+    so two requests really can call `.execute()` on it at the same instant. That
+    raced the connection's internal statement/transaction state and surfaced as
+    nonsensical low-level errors (`IndexError` from a `sqlite3.Row` that should have
+    had the queried column, `sqlite3.InterfaceError: bad parameter or other API
+    misuse`) - not a data problem, a missing lock. Reentrant so a `with self.conn:`
+    transaction block can still call `self.conn.execute(...)` internally without
+    deadlocking itself.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self._lock = threading.RLock()
+
+    def execute(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.executemany(*args, **kwargs)
+
+    def commit(self):
+        with self._lock:
+            return self._conn.commit()
+
+    def __enter__(self):
+        self._lock.acquire()
+        self._conn.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return self._conn.__exit__(exc_type, exc, tb)
+        finally:
+            self._lock.release()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 class EventStore:
     def __init__(self, db_path: str | Path) -> None:
         self.path = Path(db_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        raw_conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        raw_conn.row_factory = sqlite3.Row
+        self.conn = _ThreadSafeConnection(raw_conn)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=4000")
         self.conn.executescript(_SCHEMA)
