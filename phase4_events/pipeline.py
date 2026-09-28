@@ -78,6 +78,12 @@ class VisionPipeline:
         # transitions the way zone-tagging (Phase 7) piggybacks on events.
         self.frame_hooks: list = []
 
+        # Called every frame with (camera_id, frame, positions, identity_tracks)
+        # for hooks that need the pixels (Phase 14 PPE runs its own model on
+        # them). `frame` is the raw camera image - boxes get drawn onto it right
+        # after the hooks return, so a hook that keeps it must copy it.
+        self.image_hooks: list = []
+
     # --------------------------------------------------------------- control
     def start(self) -> None:
         self.log.info("Warming up models ...")
@@ -160,6 +166,11 @@ class VisionPipeline:
                         hook(self.cfg.camera_id, positions, fw, fh)
                     except Exception:  # noqa: BLE001 - a hook must never break the vision loop
                         self.log.exception("frame hook failed")
+            for hook in self.image_hooks:
+                try:
+                    hook(self.cfg.camera_id, frame, positions, self.resolver.tracks)
+                except Exception:  # noqa: BLE001 - a hook must never break the vision loop
+                    self.log.exception("image hook failed")
             self._rate.tick()
 
             draw_people(frame, people, self.resolver.tracks, dets, self.status())

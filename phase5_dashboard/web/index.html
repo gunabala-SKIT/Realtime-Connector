@@ -46,9 +46,19 @@
         <svg viewBox="0 0 20 20"><path d="M3 12.5V9.8L4.8 6h10.4L17 9.8v2.7"/><path d="M3 12.5h14v2.3a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-.6H6v.6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><circle cx="6.3" cy="12.5" r="1.1"/><circle cx="13.7" cy="12.5" r="1.1"/></svg>
         <span>Vehicles</span>
       </button>
+      <button class="nav-item" data-page="safety">
+        <svg viewBox="0 0 20 20"><path d="M2.5 14.8h15"/><path d="M4.2 14.8v-2.6a5.8 5.8 0 0 1 11.6 0v2.6"/><path d="M8.3 6.9V4.6h3.4v2.3"/></svg>
+        <span>Safety (PPE)</span>
+      </button>
       <button class="nav-item" data-page="rules">
         <svg viewBox="0 0 20 20"><path d="M10 2.5 16.5 5v5c0 4-2.8 6.6-6.5 7.5C6.3 16.6 3.5 14 3.5 10V5Z"/><path d="m7.3 10 1.8 1.8 3.6-3.6"/></svg>
         <span>Rules</span>
+      </button>
+    </nav>
+    <nav class="nav nav-bottom">
+      <button class="nav-item" data-page="settings">
+        <svg viewBox="0 0 20 20"><path d="M3 5.5h8M14.2 5.5H17M3 10h2.8M9.2 10H17M3 14.5h9M15.2 14.5H17"/><circle cx="12.6" cy="5.5" r="1.6"/><circle cx="7.4" cy="10" r="1.6"/><circle cx="13.6" cy="14.5" r="1.6"/></svg>
+        <span>Settings</span>
       </button>
     </nav>
   </aside>
@@ -89,6 +99,7 @@
           <div class="tile"><div class="tl">Exits</div><div class="k" id="t-exits">–</div><div class="ts">today</div></div>
           <div class="tile good"><div class="tl">In Building Now</div><div class="k" id="t-in-building">–</div><div class="ts">live</div></div>
           <div class="tile"><div class="tl">Vehicles</div><div class="k" id="t-vehicles">–</div><div class="ts">today</div></div>
+          <div class="tile crit"><div class="tl">PPE Violations</div><div class="k" id="t-ppe">–</div><div class="ts">today</div></div>
         </section>
 
         <section class="card">
@@ -197,6 +208,17 @@
               <input id="zone-capacity" type="number" min="1" placeholder="capacity (optional)" title="set to also monitor crowd/queue occupancy">
               <input id="zone-cooldown" type="number" min="0" value="60" placeholder="cooldown (s)" title="min seconds between over-capacity alerts">
             </div>
+            <fieldset class="ppe-picker">
+              <label class="switch"><input type="checkbox" id="zone-ppe-on"><span class="track"></span>
+                <span>PPE zone <span class="muted">- check people here for safety equipment</span></span></label>
+              <div class="ppe-options" id="zone-ppe" hidden>
+                <label><input type="checkbox" value="helmet"> Helmet</label>
+                <label><input type="checkbox" value="vest"> Vest</label>
+                <label><input type="checkbox" value="gloves"> Gloves</label>
+                <label><input type="checkbox" value="boots"> Boots</label>
+                <label><input type="checkbox" value="goggles"> Goggles</label>
+              </div>
+            </fieldset>
             <div class="zone-controls">
               <button type="button" class="btn" id="zone-undo">undo point</button>
               <button type="button" class="btn" id="zone-cancel">clear</button>
@@ -338,6 +360,50 @@
         </section>
       </section>
 
+      <!-- ============================================================ SAFETY (PPE) -->
+      <section class="page" id="page-safety">
+        <div class="page-header">
+          <p class="subtitle">Checks people standing in <b>PPE zones</b> for the equipment each zone requires
+            (turn it on per zone on the Zones page). A violation is logged only after <b>3 consecutive checks</b>
+            agree, so a helmet hidden for a moment by a raised arm doesn't raise an alarm. A helmet or vest
+            counts as missing when it can't be seen; gloves only when bare hands are clearly visible.</p>
+        </div>
+        <div class="banner banner-warn" id="ppe-disabled" hidden></div>
+        <section class="tiles">
+          <div class="tile crit"><div class="tl">Violations</div><div class="k" id="ppe-t-today">–</div><div class="ts">today</div></div>
+          <div class="tile warn"><div class="tl">Open</div><div class="k" id="ppe-t-open">–</div><div class="ts">need review</div></div>
+          <div class="tile"><div class="tl">In PPE zones</div><div class="k" id="ppe-t-people">–</div><div class="ts">people now</div></div>
+          <div class="tile good"><div class="tl">Compliant</div><div class="k" id="ppe-t-ok">–</div><div class="ts">people now</div></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><span>Right now</span><span class="count-badge" id="ppe-live-meta">–</span></div>
+          <div id="ppe-live" class="rules-list"></div>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <span>Violations</span>
+            <div class="filters">
+              <select id="ppe-f-status">
+                <option value="">any status</option>
+                <option value="open">open</option>
+                <option value="ack">acknowledged</option>
+                <option value="closed">closed</option>
+              </select>
+              <select id="ppe-f-window">
+                <option value="today">today</option>
+                <option value="">all time</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Evidence</th><th>Time</th><th>Person</th><th>Zone</th><th>Missing</th><th>Status</th></tr></thead>
+              <tbody id="ppe-list"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
       <!-- ============================================================ RULES -->
       <section class="page" id="page-rules">
         <div class="page-header">
@@ -389,6 +455,25 @@
           </form>
         </div>
       </div>
+
+      <!-- ============================================================ SETTINGS -->
+      <section class="page" id="page-settings">
+        <div class="page-header">
+          <p class="subtitle">These settings are stored in <code id="settings-env-file">phase1_camera/.env</code>.
+            Saved changes apply the next time each process starts; fields waiting for a restart are marked.</p>
+        </div>
+        <div class="banner banner-warn" id="settings-restart" hidden></div>
+        <div class="banner banner-info" id="settings-readonly" hidden>You're viewing settings from another
+          machine, so they're read-only. Open the dashboard on the machine running it to make changes.</div>
+        <form id="settings-form" novalidate></form>
+        <div class="savebar" id="settings-savebar" hidden>
+          <span id="settings-savebar-text">You have unsaved changes</span>
+          <div class="savebar-actions">
+            <button type="button" class="btn" id="settings-discard">Discard</button>
+            <button type="button" class="btn primary" id="settings-save">Save changes</button>
+          </div>
+        </div>
+      </section>
 
     </div>
   </div>

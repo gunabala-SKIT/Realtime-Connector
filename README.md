@@ -20,7 +20,12 @@ See `Reality_Connector_MVP_Acceptance_Criteria_v0.1.docx` for measurable MVP tar
 | **Phase 11** | Cross-camera employee attendance — entry on one camera, exit on another, aggregated per employee per day | Done — [`phase11_attendance/`](phase11_attendance/README.md) |
 | **Phase 12** | Live "select and follow" cross-camera tracking — pick an employee, see which camera they're on update live | Done — [`phase12_tracking/`](phase12_tracking/README.md) |
 | **Phase 13** | Vehicle entry/exit tracking — generic vehicle detection + OCR license-plate reading, majority-vote confirmed | Done — [`phase13_vehicle/`](phase13_vehicle/README.md) |
-| Phase 14+ | Multi-camera production hardening | Not started |
+| **Phase 14** | PPE / safety compliance — per-zone required items (helmet, vest, …), custom-trained detector, confirmed violations with evidence snapshots | Done — [`phase14_ppe/`](phase14_ppe/README.md). Gloves detection unreliable (see its README). |
+| Phase 15+ | Multi-camera production hardening | Not started |
+
+**Separate product in this repo:** [`manufacturing_intel/`](manufacturing_intel/README.md) - *Manufacturing Process
+Intelligence Platform* (stage-by-stage production tracking, waiting vs processing time, bottlenecks, rejects,
+yield, alerts, assistant). Own database, port (8100) and dashboard; imports nothing from the phases above.
 
 ```bash
 python -m phase5_dashboard      # everything, at http://127.0.0.1:8000
@@ -52,7 +57,7 @@ the same code:
 | Enrolled employee faces | `phase3_identity/gallery_chroma/` | personal biometric data — can't be regenerated, only re-enrolled |
 | Enrollment source photos (only if you want to re-enroll instead) | `img/`, `enroll_photos/` | personal photos |
 | Event history (optional) | `phase4_events/events.db` | local runtime data, regenerates empty on first run |
-| Model weights (optional — auto-download on first run) | `*.pt` files | large binaries, auto-fetched |
+| Model weights (optional — auto-download on first run) | `*.pt` files | large binaries, auto-fetched. Exception: `phase14_ppe/models/ppe.pt` is custom-trained, so it *is* in git. |
 
 ### Getting the code across
 

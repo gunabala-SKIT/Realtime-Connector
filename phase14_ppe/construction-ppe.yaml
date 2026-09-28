@@ -1,0 +1,21 @@
+# Ultralytics' official Construction-PPE dataset (AGPL-3.0, same license as the
+# ultralytics package this project already depends on), extracted locally.
+# Download: https://github.com/ultralytics/assets/releases/download/v0.0.0/construction-ppe.zip
+# Used only to train phase14_ppe's detector - see phase14_ppe/train.py.
+path: datasets/construction-ppe  # relative to this file's folder (resolved in train.py)
+train: images/train  # 1132 images
+val: images/val      # 143 images
+test: images/test    # 141 images - held out, only used for the final evaluation
+
+names:
+  0: helmet
+  1: gloves
+  2: vest
+  3: boots
+  4: goggles
+  5: none
+  6: Person
+  7: no_helmet
+  8: no_goggle
+  9: no_gloves
+  10: no_boots

@@ -130,6 +130,32 @@ CREATE TABLE IF NOT EXISTS queue_alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_queue_alerts_status ON queue_alerts(status);
 
+-- Phase 14: PPE / safety compliance. A zone becomes a PPE zone by having
+-- `ppe_required` set (e.g. 'helmet,vest,gloves' - see _ensure_column below).
+-- One row per confirmed violation episode (several consecutive checks agreed),
+-- never one per frame.
+CREATE TABLE IF NOT EXISTS ppe_violations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    violation_uid   TEXT UNIQUE NOT NULL,
+    ts              REAL NOT NULL,
+    camera_id       TEXT NOT NULL,
+    track_id        INTEGER NOT NULL,
+    zone_id         INTEGER,
+    zone_name       TEXT,
+    missing         TEXT NOT NULL,               -- comma-separated items, e.g. 'helmet,vest'
+    identity_status TEXT,
+    employee_code   TEXT,
+    employee_name   TEXT,
+    snapshot        TEXT,
+    status          TEXT NOT NULL DEFAULT 'open',  -- open | ack | closed
+    assigned_to     TEXT,
+    comment         TEXT,
+    created_at      REAL NOT NULL,
+    updated_at      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ppe_violations_status ON ppe_violations(status);
+CREATE INDEX IF NOT EXISTS idx_ppe_violations_ts ON ppe_violations(ts);
+
 -- Phase 10: footfall / entry-exit counting. A count line is 2 points (not a
 -- 3+ point polygon like a zone) drawn across a doorway/entrance. Each
 -- crossing is logged once per physical event (by track-id + which side of
@@ -303,6 +329,34 @@ class Zone:
     updated_at: float
     capacity: int | None = None        # set -> this zone is also a queue/crowd zone
     queue_cooldown_s: float = 60.0     # min seconds between over-capacity alerts
+    ppe_required: str | None = None    # set -> PPE zone; comma-separated items (Phase 14)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+PPE_ITEMS = ("helmet", "vest", "gloves", "boots", "goggles")  # values allowed in zones.ppe_required
+
+
+@dataclass
+class PPEViolation:
+    id: int | None
+    violation_uid: str
+    ts: float
+    camera_id: str
+    track_id: int
+    zone_id: int | None
+    zone_name: str | None
+    missing: str
+    identity_status: str | None
+    employee_code: str | None
+    employee_name: str | None
+    snapshot: str | None
+    status: str
+    assigned_to: str | None
+    comment: str | None
+    created_at: float
+    updated_at: float
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -528,6 +582,7 @@ class EventStore:
         self._ensure_column("rules", "zone", "TEXT")  # added in Phase 7, migrate older DBs
         self._ensure_column("zones", "capacity", "INTEGER")             # Phase 9
         self._ensure_column("zones", "queue_cooldown_s", "REAL DEFAULT 60")  # Phase 9
+        self._ensure_column("zones", "ppe_required", "TEXT")            # Phase 14
 
     def _ensure_column(self, table: str, col: str, coltype: str) -> None:
         cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
@@ -639,13 +694,14 @@ class EventStore:
     # ------------------------------------------------------------------ zones
     def add_zone(self, *, camera_id: str, name: str, points: list,
                  color: str = "#3ccfd7", enabled: bool = True,
-                 capacity: int | None = None, queue_cooldown_s: float = 60.0) -> Zone:
+                 capacity: int | None = None, queue_cooldown_s: float = 60.0,
+                 ppe_required: str | None = None) -> Zone:
         now = time.time()
         cur = self.conn.execute(
             "INSERT INTO zones (camera_id, name, points, color, enabled, created_at, updated_at, "
-            "capacity, queue_cooldown_s) VALUES (?,?,?,?,?,?,?,?,?)",
+            "capacity, queue_cooldown_s, ppe_required) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (camera_id, name, json.dumps(points), color, int(enabled), now, now,
-             capacity, queue_cooldown_s),
+             capacity, queue_cooldown_s, ppe_required or None),
         )
         self.conn.commit()
         return self.get_zone(int(cur.lastrowid))
@@ -674,6 +730,8 @@ class EventStore:
             fields["points"] = json.dumps(fields["points"])
         if "enabled" in fields:
             fields["enabled"] = int(fields["enabled"])
+        if "ppe_required" in fields:
+            fields["ppe_required"] = fields["ppe_required"] or None  # "" clears the PPE requirement
         cols = ", ".join(f"{k}=?" for k in fields)
         self.conn.execute(f"UPDATE zones SET {cols}, updated_at=? WHERE id=?",
                           [*fields.values(), time.time(), zone_id])
@@ -746,6 +804,60 @@ class EventStore:
                           [*fields.values(), time.time(), alert_id])
         self.conn.commit()
         return self.get_queue_alert(alert_id)
+
+    # --------------------------------------------------------- ppe violations
+    def create_ppe_violation(self, *, ts: float, camera_id: str, track_id: int, zone_id: int | None,
+                             zone_name: str | None, missing: list[str], identity_status: str | None,
+                             employee_code: str | None, employee_name: str | None,
+                             snapshot: str | None, violation_uid: str | None = None) -> PPEViolation:
+        import uuid
+        now = time.time()
+        cur = self.conn.execute(
+            "INSERT INTO ppe_violations (violation_uid, ts, camera_id, track_id, zone_id, zone_name, missing, "
+            "identity_status, employee_code, employee_name, snapshot, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (violation_uid or uuid.uuid4().hex, ts, camera_id, track_id, zone_id, zone_name, ",".join(missing),
+             identity_status, employee_code, employee_name, snapshot, "open", now, now),
+        )
+        self.conn.commit()
+        return self.get_ppe_violation(int(cur.lastrowid))
+
+    def get_ppe_violation(self, violation_id: int) -> PPEViolation | None:
+        row = self.conn.execute("SELECT * FROM ppe_violations WHERE id=?", (violation_id,)).fetchone()
+        return PPEViolation(**{k: row[k] for k in row.keys()}) if row else None
+
+    def list_ppe_violations(self, *, status: str | None = None, since: float | None = None,
+                            limit: int = 100) -> list[PPEViolation]:
+        where, params = [], []
+        if status:
+            where.append("status = ?"); params.append(status)
+        if since is not None:
+            where.append("ts >= ?"); params.append(since)
+        sql = "SELECT * FROM ppe_violations"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id DESC LIMIT ?"; params.append(max(1, min(limit, 1000)))
+        return [PPEViolation(**{k: r[k] for k in r.keys()}) for r in self.conn.execute(sql, params).fetchall()]
+
+    def ppe_violation_counts(self, since: float) -> dict:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS total, SUM(status = 'open') AS open FROM ppe_violations WHERE ts >= ?", (since,)
+        ).fetchone()
+        by_item: dict[str, int] = {}
+        for r in self.conn.execute("SELECT missing FROM ppe_violations WHERE ts >= ?", (since,)).fetchall():
+            for item in (r["missing"] or "").split(","):
+                if item:
+                    by_item[item] = by_item.get(item, 0) + 1
+        return {"total": row["total"] or 0, "open": row["open"] or 0, "by_item": by_item}
+
+    def update_ppe_violation(self, violation_id: int, **fields) -> PPEViolation | None:
+        if not fields:
+            return self.get_ppe_violation(violation_id)
+        cols = ", ".join(f"{k}=?" for k in fields)
+        self.conn.execute(f"UPDATE ppe_violations SET {cols}, updated_at=? WHERE id=?",
+                          [*fields.values(), time.time(), violation_id])
+        self.conn.commit()
+        return self.get_ppe_violation(violation_id)
 
     # ------------------------------------------------------------ count lines
     def add_count_line(self, *, camera_id: str, name: str, points: list,

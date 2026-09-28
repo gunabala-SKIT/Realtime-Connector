@@ -78,9 +78,11 @@ async function loadEvents() {
   renderEvents();
 }
 
+let ppeSeenTotal = null;  // today's PPE violation count at the last refresh
+
 async function refreshStats() {
   try {
-    const [stats, emp, live, shelves, zones, lines, attendanceToday, vehiclesToday] = await Promise.all([
+    const [stats, emp, live, shelves, zones, lines, attendanceToday, vehiclesToday, ppe] = await Promise.all([
       getJSON(`${API}/stats?window=today`),
       getJSON(`${API}/employees`),
       getJSON(`live/status`),
@@ -89,6 +91,7 @@ async function refreshStats() {
       getJSON(`${API}/count-lines/summary`).catch(() => ({ lines: [] })),
       getJSON(`${API}/attendance`).catch(() => ({ attendance: [] })),
       getJSON(`${API}/vehicle-log`).catch(() => ({ log: [] })),
+      getJSON(`${API}/ppe-violations/summary`).catch(() => null),
     ]);
     setTiles(stats, emp, live);
     const low = shelves.shelves.filter((s) => s.last_check && s.last_check.pct_full <= s.low_stock_threshold);
@@ -101,6 +104,14 @@ async function refreshStats() {
     const inBuilding = attendanceToday.attendance.filter((a) => a.entry_ts != null && a.exit_ts == null);
     $("#t-in-building").textContent = attendanceToday.attendance.length ? inBuilding.length : "–";
     $("#t-vehicles").textContent = vehiclesToday.log.length || "–";
+    if (ppe) {
+      $("#t-ppe").textContent = ppe.today.total;
+      if (ppeSeenTotal !== null && ppe.today.total > ppeSeenTotal) {
+        playAlertSound();
+        showToast(`New PPE violation - see Safety (PPE)`);
+      }
+      ppeSeenTotal = ppe.today.total;
+    }
     loadAlerts().catch(console.warn);
   } catch (e) { console.warn(e); }
 }
@@ -360,8 +371,8 @@ function zoneRow(z) {
     : `<span></span>`;
   return `<div class="rule-row" data-id="${z.id}">
     <div>
-      <div class="name" style="color:${z.color}">■ ${esc(z.name)}</div>
-      <div class="cond">${esc(z.camera_id)} · ${z.points.length} points${z.capacity ? ` · capacity ${z.capacity}` : ""}</div>
+      <div class="name" style="color:${z.color}">■ ${esc(z.name)}${z.ppe_required ? ` <span class="badge badge-info">PPE</span>` : ""}</div>
+      <div class="cond">${esc(z.camera_id)} · ${z.points.length} points${z.capacity ? ` · capacity ${z.capacity}` : ""}${z.ppe_required ? ` · requires ${esc(z.ppe_required.split(",").join(", "))}` : ""}</div>
     </div>
     ${occupancy}
     <button data-act="delete">delete</button>
@@ -424,19 +435,33 @@ $("#zone-finish").addEventListener("click", async () => {
   const name = $("#zone-name").value.trim();
   if (!name) return alert("Give the zone a name.");
   const capacityRaw = $("#zone-capacity").value.trim();
+  const ppeBoxes = $("#zone-ppe-on").checked ? [...document.querySelectorAll("#zone-ppe input:checked")] : [];
+  if ($("#zone-ppe-on").checked && !ppeBoxes.length) return alert("Tick at least one PPE item, or turn PPE zone off.");
   const r = await fetch(`${API}/zones`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       camera_id: state.cameraId || "cam-1", name, points: zonePoints, color: $("#zone-color").value,
       capacity: capacityRaw ? Number(capacityRaw) : null,
       queue_cooldown_s: Number($("#zone-cooldown").value) || 60,
+      ppe_required: ppeBoxes.map((b) => b.value).join(",") || null,
     }),
   });
   if (!r.ok) return alert("Could not save zone: " + (await r.text()));
   zonePoints = [];
   $("#zone-name").value = "";
   $("#zone-capacity").value = "";
+  $("#zone-ppe-on").checked = false;
+  $("#zone-ppe").hidden = true;
   loadZonesList();
+});
+
+// Turning "PPE zone" on pre-ticks the configured default items (PPE_REQUIRED_ITEMS).
+$("#zone-ppe-on").addEventListener("change", async (e) => {
+  $("#zone-ppe").hidden = !e.target.checked;
+  if (!e.target.checked) return;
+  let defaults = ["helmet", "vest"];
+  try { defaults = (await getJSON(`${API}/ppe/status`)).default_items; } catch (err) { /* keep fallback */ }
+  document.querySelectorAll("#zone-ppe input").forEach((b) => { b.checked = defaults.includes(b.value); });
 });
 
 $("#zones-list").addEventListener("click", async (e) => {
@@ -849,21 +874,362 @@ $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#
     renderEvents();
   }));
 
+// ---------------------------------------------------------------- safety (PPE)
+const PPE_LABEL = { helmet: "Helmet", vest: "Vest", gloves: "Gloves", boots: "Boots", goggles: "Goggles" };
+const PPE_STATE = {
+  worn: ["badge-good", "worn"], missing: ["badge-crit", "missing"],
+  not_seen: ["badge-muted", "not seen"], unknown: ["badge-muted", "can't tell"],
+};
+let ppeTimer = null;
+let ppeViolations = [];
+
+const ppeWho = (p) => p.employee_name
+  ? esc(p.employee_name)
+  : `Track ${p.track_id} <span class="muted">· ${esc((p.identity_status || "unverified").toLowerCase())}</span>`;
+
+function ppeChip(item, s, failing) {
+  // not_seen only counts against helmet/vest (the server says which items are failing)
+  const [cls, word] = s === "not_seen" && failing ? ["badge-crit", "not seen"] : PPE_STATE[s] || PPE_STATE.unknown;
+  return `<span class="badge ${cls}">${PPE_LABEL[item] || esc(item)}: ${word}</span>`;
+}
+
+function renderPpeLive(st) {
+  $("#ppe-disabled").hidden = st.enabled;
+  if (!st.enabled) $("#ppe-disabled").innerHTML = `<p><b>PPE checking is off.</b> ${esc(st.disabled_reason || "")}</p>`;
+  const people = (st.live && st.live.people) || [];
+  $("#ppe-t-people").textContent = st.enabled ? people.length : "–";
+  $("#ppe-t-ok").textContent = st.enabled ? people.filter((p) => !p.failing.length).length : "–";
+  $("#ppe-live-meta").textContent = st.enabled && st.live.ts
+    ? `checked ${relTimeShort(st.live.ts)} · ${st.infer_ms} ms per check` : "not checking";
+  $("#ppe-live").innerHTML = people.length ? people.map((p) => {
+    const confirming = Object.entries(p.streak || {}).filter(([, n]) => n > 0 && n < st.confirm_checks)
+      .map(([i, n]) => `${PPE_LABEL[i] || i} ${n}/${st.confirm_checks}`);
+    return `<div class="rule-row ppe-person">
+      <div>
+        <div class="name">${ppeWho(p)}</div>
+        <div class="cond">zone ${esc(p.zone_name)}${confirming.length ? ` · confirming: ${esc(confirming.join(", "))}` : ""}</div>
+      </div>
+      <div class="ppe-chips">${Object.entries(p.items).map(([i, s]) => ppeChip(i, s, p.failing.includes(i))).join("")}</div>
+      <span class="badge ${p.failing.length ? "badge-crit" : "badge-good"}">${p.failing.length ? "Not compliant" : "Compliant"}</span>
+    </div>`;
+  }).join("") : `<p class="hint">No one is standing in a PPE zone right now.</p>`;
+}
+
+function ppeRow(v) {
+  const missing = v.missing.split(",").filter(Boolean)
+    .map((m) => `<span class="badge badge-crit">No ${esc((PPE_LABEL[m] || m).toLowerCase())}</span>`).join(" ");
+  const who = v.employee_name ? esc(v.employee_name)
+    : `Track ${v.track_id} <span class="cell-sub">${esc((v.identity_status || "").toLowerCase())}</span>`;
+  const status = v.status === "open"
+    ? `<div class="alertbtns" data-id="${v.id}"><button data-act="ack">ack</button><button data-act="closed">close</button></div>`
+    : `<span class="badge badge-muted">${v.status === "ack" ? "acknowledged" : "closed"}</span>`;
+  const when = new Date(v.ts * 1000).toDateString() === new Date().toDateString() ? fmtTime(v.ts) : fmtDateTime(v.ts);
+  return `<tr class="ppe-row" data-id="${v.id}">
+    <td>${v.snapshot ? `<img class="thumb" loading="lazy" src="${API}/ppe-violations/${v.id}/snapshot" alt="evidence">` : "—"}</td>
+    <td class="cell-muted">${when}</td>
+    <td>${who}</td>
+    <td class="cell-muted">${esc(v.zone_name || "—")}</td>
+    <td>${missing}</td>
+    <td>${status}</td>
+  </tr>`;
+}
+
+async function loadPpe() {
+  const status = $("#ppe-f-status").value;
+  const windowSel = $("#ppe-f-window").value;
+  const qs = new URLSearchParams({ limit: "200" });
+  if (status) qs.set("status", status);
+  if (windowSel) qs.set("window", windowSel);
+  try {
+    const [st, sum, list] = await Promise.all([
+      getJSON(`${API}/ppe/status`),
+      getJSON(`${API}/ppe-violations/summary`),
+      getJSON(`${API}/ppe-violations?${qs}`),
+    ]);
+    renderPpeLive(st);
+    $("#ppe-t-today").textContent = sum.today.total;
+    $("#ppe-t-open").textContent = sum.today.open;
+    ppeViolations = list.violations;
+    $("#ppe-list").innerHTML = ppeViolations.length ? ppeViolations.map(ppeRow).join("")
+      : `<tr><td colspan="6" class="cell-muted">No violations${windowSel === "today" ? " today" : ""}.</td></tr>`;
+  } catch (e) { console.warn(e); }
+}
+
+function openPpeModal(v) {
+  $("#modal-img").src = v.snapshot ? `${API}/ppe-violations/${v.id}/snapshot` : "";
+  $("#modal-body").innerHTML = `
+    <dt>violation</dt><dd>#${v.id}</dd>
+    <dt>time</dt><dd>${fmtDateTime(v.ts)}</dd>
+    <dt>missing</dt><dd>${esc(v.missing.split(",").join(", "))}</dd>
+    <dt>person</dt><dd>${esc(v.employee_name || "-")} ${v.employee_code ? "(" + esc(v.employee_code) + ")" : ""}</dd>
+    <dt>identity</dt><dd>${esc(v.identity_status || "-")}</dd>
+    <dt>track</dt><dd>${v.track_id}</dd>
+    <dt>zone</dt><dd>${esc(v.zone_name || "-")}</dd>
+    <dt>camera</dt><dd>${esc(v.camera_id)}</dd>
+    <dt>status</dt><dd>${esc(v.status)}</dd>`;
+  $("#modal").hidden = false;
+}
+
+$("#ppe-list").addEventListener("click", async (e) => {
+  const btns = e.target.closest(".alertbtns");
+  if (btns && e.target.dataset.act) {
+    await fetch(`${API}/ppe-violations/${btns.dataset.id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: e.target.dataset.act }),
+    });
+    loadPpe();
+    refreshStats();
+    return;
+  }
+  const row = e.target.closest(".ppe-row");
+  const v = row && ppeViolations.find((x) => x.id === Number(row.dataset.id));
+  if (v) openPpeModal(v);
+});
+["ppe-f-status", "ppe-f-window"].forEach((id) => $("#" + id).addEventListener("change", loadPpe));
+
+// ---------------------------------------------------------------- settings
+const settings = { data: null, original: {}, dirty: new Set(), saving: false };
+const RESTART_HOW = {
+  dashboard: "Dashboard: stop it (Ctrl+C) and run <code>python -m phase5_dashboard</code> again.",
+  shelf: "Shelf camera: restart <code>python -m phase8_shelf.app</code>.",
+  vehicle: "Vehicle camera: restart <code>python -m phase13_vehicle.app</code>.",
+};
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+// passwords are sent exactly as typed; everything else is trimmed
+const controlValue = (el) =>
+  el.type === "checkbox" ? (el.checked ? "true" : "false") : el.type === "password" ? el.value : el.value.trim();
+
+function settingControl(f, disabled) {
+  const attrs = `id="set-${f.key}" data-key="${f.key}"${disabled ? " disabled" : ""}`;
+  const ph = esc(f.placeholder || (f.default ? `Default: ${f.default}` : ""));
+  const value = f.value || f.default || "";
+  if (f.type === "bool") {
+    const on = value === "true";
+    return `<label class="switch"><input type="checkbox" ${attrs}${on ? " checked" : ""}>
+      <span class="track"></span><span class="switch-text">${on ? "On" : "Off"}</span></label>`;
+  }
+  if (f.type === "select") {
+    const opts = f.options.includes(value) || !value ? f.options : [value, ...f.options];
+    return `<select ${attrs}>${opts.map((o) =>
+      `<option value="${esc(o)}"${o === value ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  }
+  if (f.type === "secret") {
+    return `<input type="password" autocomplete="new-password" ${attrs}
+      placeholder="${f.is_set ? "Saved - leave blank to keep it" : "Not set"}">`;
+  }
+  if (f.type === "int" || f.type === "number") {
+    const range = `${f.min != null ? ` min="${f.min}"` : ""}${f.max != null ? ` max="${f.max}"` : ""}`;
+    return `<input type="number" ${attrs}${range} step="${f.type === "int" ? 1 : (f.step || "any")}"
+      value="${esc(f.value)}" placeholder="${ph}">`;
+  }
+  return `<input type="text" autocomplete="off" spellcheck="false" ${attrs} value="${esc(f.value)}" placeholder="${ph}">`;
+}
+
+function settingField(f, disabled) {
+  const badges = (f.pending ? `<span class="badge badge-warn">Restart pending</span>` : "") +
+    (f.overridden ? `<span class="badge badge-muted" title="A system environment variable with this name takes priority over the .env file">Overridden by environment</span>` : "");
+  return `<div class="setting${f.type === "camera_url" ? " wide" : ""}" data-field="${f.key}">
+    <label class="setting-label" for="set-${f.key}">${esc(f.label)}${badges}</label>
+    ${settingControl(f, disabled)}
+    ${f.help ? `<div class="setting-help">${esc(f.help)}</div>` : ""}
+    <div class="setting-error" hidden></div>
+  </div>`;
+}
+
+function settingsSection(s, disabled) {
+  const desc = esc(s.description).replace(/(python -m \S+)/, "<code>$1</code>");
+  const test = s.camera_prefix === null ? "" : `<div class="camera-test" data-prefix="${esc(s.camera_prefix)}">
+      <div class="camera-test-row">
+        <button type="button" class="btn" data-act="test-camera"${disabled ? " disabled" : ""}>Test connection</button>
+        <span class="test-status"></span>
+      </div>
+      <img class="test-preview" alt="Frame from the tested camera" hidden>
+    </div>`;
+  return `<section class="panel-card settings-card" data-section="${s.id}">
+    <div class="card-head"><span>${esc(s.title)}</span><span class="card-desc">${desc}</span></div>
+    <div class="settings-grid">${s.fields.map((f) => settingField(f, disabled)).join("")}${test}</div>
+  </section>`;
+}
+
+function renderSettings(data) {
+  settings.data = data;
+  settings.original = {};
+  settings.dirty.clear();
+  $("#settings-env-file").textContent = data.env_file;
+  $("#settings-readonly").hidden = data.can_edit;
+  $("#settings-form").innerHTML = data.sections.map((s) => settingsSection(s, !data.can_edit)).join("");
+  document.querySelectorAll("#settings-form [data-key]").forEach((el) => {
+    settings.original[el.dataset.key] = controlValue(el);
+  });
+  const waiting = Object.entries(data.restart).filter(([, pending]) => pending).map(([p]) => `<p>${RESTART_HOW[p]}</p>`);
+  $("#settings-restart").hidden = !waiting.length;
+  $("#settings-restart").innerHTML = waiting.length
+    ? `<p><b>Saved changes are waiting for a restart.</b></p>${waiting.join("")}` : "";
+  updateSaveBar();
+}
+
+function updateSaveBar() {
+  const n = settings.dirty.size;
+  $("#settings-savebar").hidden = n === 0;
+  $("#settings-savebar-text").textContent = `${n} unsaved change${n === 1 ? "" : "s"}`;
+}
+
+async function loadSettings() {
+  if (settings.dirty.size) return;  // don't wipe edits in progress when revisiting the page
+  try {
+    renderSettings(await getJSON(`${API}/settings`));
+  } catch (e) {
+    $("#settings-form").innerHTML = `<p class="hint">Couldn't load settings: ${esc(e.message)}</p>`;
+  }
+}
+
+function onSettingEdit(e) {
+  const el = e.target.closest("[data-key]");
+  if (!el) return;
+  const v = controlValue(el);
+  const dirty = el.type === "password" ? v !== "" : v !== settings.original[el.dataset.key];
+  settings.dirty[dirty ? "add" : "delete"](el.dataset.key);
+  const wrap = el.closest(".setting");
+  wrap.classList.toggle("dirty", dirty);
+  wrap.classList.remove("has-error");
+  wrap.querySelector(".setting-error").hidden = true;
+  if (el.type === "checkbox") wrap.querySelector(".switch-text").textContent = el.checked ? "On" : "Off";
+  updateSaveBar();
+}
+
+function showSettingErrors(errors) {
+  let first = null;
+  for (const [key, msg] of Object.entries(errors)) {
+    const wrap = document.querySelector(`#settings-form [data-field="${key}"]`);
+    if (!wrap) continue;
+    wrap.classList.add("has-error");
+    const box = wrap.querySelector(".setting-error");
+    box.textContent = msg;
+    box.hidden = false;
+    first = first || wrap;
+  }
+  if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+  showToast("Fix the highlighted fields, then save again");
+}
+
+async function saveSettings() {
+  if (settings.saving || !settings.dirty.size) return;
+  settings.saving = true;
+  const btn = $("#settings-save");
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+  const values = {};
+  settings.dirty.forEach((k) => {
+    values[k] = controlValue(document.querySelector(`#settings-form [data-key="${k}"]`));
+  });
+  try {
+    const r = await fetch(`${API}/settings`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ values }) });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) {
+      renderSettings(body);
+      showToast(body.restart.dashboard || body.restart.shelf || body.restart.vehicle
+        ? "Saved - restart to apply" : "Saved");
+    } else if (r.status === 400 && body.detail && body.detail.errors) {
+      showSettingErrors(body.detail.errors);
+    } else {
+      showToast(typeof body.detail === "string" ? body.detail : `Couldn't save (error ${r.status})`);
+    }
+  } catch (e) {
+    showToast("Couldn't save - is the dashboard still running?");
+  } finally {
+    settings.saving = false;
+    btn.disabled = false;
+    btn.textContent = "Save changes";
+  }
+}
+
+async function testCamera(btn) {
+  const box = btn.closest(".camera-test");
+  const prefix = box.dataset.prefix;
+  const val = (k) => {
+    const el = document.querySelector(`#settings-form [data-key="${prefix}${k}"]`);
+    return el ? controlValue(el) : "";
+  };
+  const status = box.querySelector(".test-status");
+  const img = box.querySelector(".test-preview");
+  btn.disabled = true;
+  img.hidden = true;
+  status.className = "test-status";
+  status.textContent = "Connecting... this can take up to 15 seconds.";
+  try {
+    const r = await fetch(`${API}/settings/test-camera`, {
+      method: "POST", headers: JSON_HEADERS,
+      body: JSON.stringify({
+        prefix, url: val("CAMERA_URL"), user: val("CAMERA_USER"),
+        password: val("CAMERA_PASSWORD"), transport: val("RTSP_TRANSPORT") || "tcp",
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      const bits = [d.resolution, d.fps ? `${d.fps} fps` : null,
+        d.shared ? "the camera this dashboard is using now" : `${(d.elapsed_ms / 1000).toFixed(1)} s to connect`];
+      status.className = "test-status ok";
+      status.innerHTML = `Connected <span class="muted">· ${esc(bits.filter(Boolean).join(" · "))}</span>`;
+      if (d.preview) { img.src = d.preview; img.hidden = false; }
+    } else {
+      status.className = "test-status fail";
+      status.textContent = (r.ok ? d.error : (typeof d.detail === "string" ? d.detail : null)) || "Couldn't connect.";
+    }
+  } catch (e) {
+    status.className = "test-status fail";
+    status.textContent = "Test failed - is the dashboard still running?";
+  } finally {
+    btn.disabled = !settings.data.can_edit;
+  }
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  let t = document.querySelector(".toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.className = "toast";
+    t.setAttribute("role", "status");
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+}
+
+$("#settings-form").addEventListener("input", onSettingEdit);
+$("#settings-form").addEventListener("change", onSettingEdit);
+$("#settings-form").addEventListener("click", (e) => {
+  const btn = e.target.closest('[data-act="test-camera"]');
+  if (btn) testCamera(btn);
+});
+$("#settings-save").addEventListener("click", saveSettings);
+$("#settings-discard").addEventListener("click", () => settings.data && renderSettings(settings.data));
+window.addEventListener("beforeunload", (e) => {
+  if (settings.dirty.size) { e.preventDefault(); e.returnValue = ""; }
+});
+
 // ---------------------------------------------------------------- page nav
-const PAGES = ["dashboard", "shelves", "zones", "footfall", "attendance", "track", "vehicles", "rules"];
+const PAGES = ["dashboard", "shelves", "zones", "footfall", "attendance", "track", "vehicles", "safety", "rules", "settings"];
 const PAGE_TITLES = {
   dashboard: "Dashboard", shelves: "Shelf Configuration", zones: "Zones", footfall: "Footfall",
-  attendance: "Attendance", track: "Track", vehicles: "Vehicles", rules: "Rules",
+  attendance: "Attendance", track: "Track", vehicles: "Vehicles", safety: "Safety (PPE)", rules: "Rules",
+  settings: "Settings",
 };
 
 function onPageShown(name) {
-  if (name === "shelves") { loadShelves(); loadShelfAlerts(); }
+  clearInterval(ppeTimer);  // the Safety page's live panel polls only while it's open
+  if (name === "safety") { loadPpe(); ppeTimer = setInterval(loadPpe, 2000); }
+  else if (name === "shelves") { loadShelves(); loadShelfAlerts(); }
   else if (name === "zones") { zonePoints = []; loadZoneFrame(); loadZonesList(); loadQueueAlerts(); }
   else if (name === "footfall") { linePoints = []; lineFlipped = false; loadLineFrame(); loadCountLines(); }
   else if (name === "attendance") { $("#attendance-date").value = todayStr(); loadCameraRoles(); loadAttendance(); }
   else if (name === "track") { loadTrackEmployeeOptions(); loadTrack(); }
   else if (name === "vehicles") { $("#vehicle-log-date").value = todayStr(); loadVehicleLog(); loadVehicleEvents(); }
   else if (name === "rules") { loadRules(); }
+  else if (name === "settings") { loadSettings(); }
 }
 
 function showPage(name) {

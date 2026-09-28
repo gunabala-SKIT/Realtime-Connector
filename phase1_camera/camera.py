@@ -64,6 +64,7 @@ class CameraStream:
         self._reported_fps = 0.0
         self._consecutive_failures = 0
         self._stopped = False
+        self._next_file_frame = 0.0
 
     # ---------------------------------------------------------------- lifecycle
     def connect(self) -> bool:
@@ -161,11 +162,23 @@ class CameraStream:
         src = self.cfg.camera_source
         return bool(src) and not str(src).isdigit() and "://" not in str(src)
 
+    def _pace_file(self) -> None:
+        """Play a video file at its recorded frame rate, like a camera would. Without
+        this it's decoded as fast as the disk allows - a minute-long demo clip
+        flashes past in seconds and loops, and timed checks see random frames."""
+        interval = 1.0 / (self._reported_fps if 0 < self._reported_fps < 240 else 25.0)
+        now = time.monotonic()
+        if now < self._next_file_frame:
+            time.sleep(self._next_file_frame - now)
+        self._next_file_frame = max(self._next_file_frame + interval, time.monotonic())
+
     def read_frame(self) -> Tuple[bool, Optional["cv2.Mat"]]:
         """One read attempt. Returns ``(False, None)`` on any failure; never raises."""
         if self.cap is None:
             return False, None
 
+        if self._is_file_source():
+            self._pace_file()
         ok, frame = self.cap.read()
         if (not ok or frame is None) and self._is_file_source():
             # a video file just hit EOF - loop it (handy for testing/tuning)

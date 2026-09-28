@@ -22,7 +22,7 @@ Endpoints
   POST   /alerts/{id}   {"status"?, "assigned_to"?, "comment"?} -> ack/close/assign/annotate
 
   GET    /zones?camera_id=             -> configured zones (Phase 7)
-  POST   /zones   {camera_id, name, points: [[x,y]..], color?, capacity?, queue_cooldown_s?}
+  POST   /zones   {camera_id, name, points: [[x,y]..], color?, capacity?, queue_cooldown_s?, ppe_required?}
   PATCH  /zones/{id}
   DELETE /zones/{id}
   GET    /zones/summary                -> latest queue check per zone (Phase 9), for a dashboard tile
@@ -59,6 +59,11 @@ Endpoints
   GET    /vehicle-log?date=YYYY-MM-DD         -> per-plate entry/exit across every camera, default today
   GET    /track-vehicle/{plate}?date=&limit=  -> current camera + recent path for one plate
 
+  GET    /ppe-violations?status=&window=today&limit=  -> confirmed PPE violations (Phase 14)
+  GET    /ppe-violations/summary              -> today's totals, open count, count per missing item
+  GET    /ppe-violations/{id}/snapshot        -> image/jpeg evidence
+  POST   /ppe-violations/{id}   {"status"?, "assigned_to"?, "comment"?}
+
   WS   /ws/events                      -> pushes new events (with alert info + zone) as JSON, ~1 s
   WS   /ws/alerts                      -> pushes new alerts as JSON, ~1 s
 """
@@ -66,7 +71,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -74,7 +79,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .config import Phase4Config
-from .store import EventStore
+from .store import PPE_ITEMS, EventStore
 
 cfg = Phase4Config.load()
 store = EventStore(cfg.events_db)
@@ -255,6 +260,7 @@ class ZoneIn(BaseModel):
     enabled: bool = True
     capacity: int | None = None       # Phase 9: set -> this zone is also a queue/crowd zone
     queue_cooldown_s: float = 60.0
+    ppe_required: str | None = None   # Phase 14: e.g. "helmet,vest" -> this zone is also a PPE zone
 
 
 class ZonePatch(BaseModel):
@@ -264,6 +270,18 @@ class ZonePatch(BaseModel):
     enabled: bool | None = None
     capacity: int | None = None
     queue_cooldown_s: float | None = None
+    ppe_required: str | None = None   # "" clears it
+
+
+def _check_ppe_items(value: str | None) -> str | None:
+    """Normalise 'Helmet, vest' -> 'helmet,vest'; reject unknown items."""
+    if not value:
+        return value
+    items = [p.strip().lower() for p in value.split(",") if p.strip()]
+    bad = [i for i in items if i not in PPE_ITEMS]
+    if bad:
+        raise HTTPException(422, f"unknown PPE item(s): {', '.join(bad)} (allowed: {', '.join(PPE_ITEMS)})")
+    return ",".join(dict.fromkeys(items))
 
 
 @app.get("/zones")
@@ -291,7 +309,9 @@ def create_zone(body: ZoneIn) -> dict:
         raise HTTPException(422, "a zone needs at least 3 points")
     if body.capacity is not None and body.capacity < 1:
         raise HTTPException(422, "capacity must be >= 1")
-    zone = store.add_zone(**body.model_dump())
+    fields = body.model_dump()
+    fields["ppe_required"] = _check_ppe_items(fields["ppe_required"])
+    zone = store.add_zone(**fields)
     return zone.to_dict()
 
 
@@ -300,6 +320,8 @@ def patch_zone(zone_id: int, body: ZonePatch) -> dict:
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if "points" in fields and len(fields["points"]) < 3:
         raise HTTPException(422, "a zone needs at least 3 points")
+    if "ppe_required" in fields:
+        fields["ppe_required"] = _check_ppe_items(fields["ppe_required"])
     zone = store.update_zone(zone_id, **fields)
     if not zone:
         raise HTTPException(404, "zone not found")
@@ -635,6 +657,52 @@ def update_shelf_alert(alert_id: int, body: ShelfAlertPatch) -> dict:
     if not a:
         raise HTTPException(404, "shelf alert not found")
     return a.to_dict()
+
+
+# -------------------------------------------------------------- ppe violations
+def _start_of_today() -> float:
+    return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
+@app.get("/ppe-violations")
+def list_ppe_violations(status: str | None = None, window: str | None = None,
+                        limit: int = Query(100, ge=1, le=1000)) -> dict:
+    since = _start_of_today() if window == "today" else None
+    rows = store.list_ppe_violations(status=status, since=since, limit=limit)
+    return {"count": len(rows), "violations": [v.to_dict() for v in rows]}
+
+
+@app.get("/ppe-violations/summary")
+def ppe_violations_summary() -> dict:
+    return {"today": store.ppe_violation_counts(_start_of_today())}
+
+
+@app.get("/ppe-violations/{violation_id}/snapshot")
+def ppe_violation_snapshot(violation_id: int):
+    v = store.get_ppe_violation(violation_id)
+    if not v or not v.snapshot:
+        raise HTTPException(404, "no snapshot for this violation")
+    path = Path(cfg.snapshot_dir) / v.snapshot
+    if not path.is_file():
+        raise HTTPException(404, "snapshot file missing")
+    return FileResponse(str(path), media_type="image/jpeg")
+
+
+class PPEViolationPatch(BaseModel):
+    status: str | None = None
+    assigned_to: str | None = None
+    comment: str | None = None
+
+
+@app.post("/ppe-violations/{violation_id}")
+def update_ppe_violation(violation_id: int, body: PPEViolationPatch) -> dict:
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "status" in fields and fields["status"] not in ("open", "ack", "closed"):
+        raise HTTPException(422, "status must be open|ack|closed")
+    v = store.update_ppe_violation(violation_id, **fields)
+    if not v:
+        raise HTTPException(404, "PPE violation not found")
+    return v.to_dict()
 
 
 # --------------------------------------------------------------------- alerts

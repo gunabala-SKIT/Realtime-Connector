@@ -1,0 +1,86 @@
+[
+  {
+    "image": "image1.jpeg",
+    "people": 2,
+    "missing": [],
+    "scene": 1,
+    "start_s": 0.0,
+    "end_s": 8.0,
+    "expect": "compliant"
+  },
+  {
+    "image": "image1120.jpg",
+    "people": 1,
+    "missing": [
+      "helmet",
+      "vest"
+    ],
+    "scene": 2,
+    "start_s": 8.0,
+    "end_s": 16.0,
+    "expect": "violation: no helmet, no vest"
+  },
+  {
+    "image": "image1003.jpg",
+    "people": 1,
+    "missing": [],
+    "scene": 3,
+    "start_s": 16.0,
+    "end_s": 24.0,
+    "expect": "compliant"
+  },
+  {
+    "image": "image1132.jpg",
+    "people": 1,
+    "missing": [
+      "helmet",
+      "vest"
+    ],
+    "scene": 4,
+    "start_s": 24.0,
+    "end_s": 32.0,
+    "expect": "violation: no helmet, no vest"
+  },
+  {
+    "image": "image1007.jpg",
+    "people": 1,
+    "missing": [],
+    "scene": 5,
+    "start_s": 32.0,
+    "end_s": 40.0,
+    "expect": "compliant"
+  },
+  {
+    "image": "image1133.jpg",
+    "people": 1,
+    "missing": [
+      "helmet",
+      "vest"
+    ],
+    "scene": 6,
+    "start_s": 40.0,
+    "end_s": 48.0,
+    "expect": "violation: no helmet, no vest"
+  },
+  {
+    "image": "image1009.jpg",
+    "people": 1,
+    "missing": [],
+    "scene": 7,
+    "start_s": 48.0,
+    "end_s": 56.0,
+    "expect": "compliant"
+  },
+  {
+    "image": "image1139.jpg",
+    "people": 1,
+    "missing": [
+      "helmet",
+      "vest"
+    ],
+    "scene": 8,
+    "start_s": 56.0,
+    "end_s": 64.0,
+    "expect": "violation: no helmet, no vest"
+  }
+]

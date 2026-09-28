@@ -56,6 +56,41 @@ Check on startup: the log line `Face engine ready (... {'detection': 'CUDAExecut
 
 `API_HOST` / `API_PORT` in `.env` change where it binds (default `127.0.0.1:8000`).
 
+## Settings page
+
+The **Settings** item at the bottom of the sidebar edits `phase1_camera/.env`,
+the one file every phase reads at startup, so there's no second copy of
+configuration to drift. It covers the main camera, detection, face recognition,
+events, email, queue/footfall tuning, and the separate shelf and vehicle cameras.
+
+- **Changes apply on restart.** Each process reads `.env` once at startup, so a
+  saved field shows *Restart pending* and a banner says which process to
+  restart. After the restart the badge clears.
+- **Test connection** (per camera) opens the stream you typed, before you save,
+  and shows resolution, fps and a live frame. Testing the camera the dashboard
+  is already streaming reuses its current frame instead of opening a second
+  connection, since many cameras accept only one client.
+- **Saves edit the file in place.** Comments, ordering and inline notes are kept.
+  Keys not yet in the file are appended under a marker comment. The previous
+  version is kept as `.env.bak` (git-ignored, like `.env`).
+- **Secrets are write-only.** Passwords are never sent back to the browser (a
+  blank password field keeps the stored one), and credentials inside camera URLs
+  are shown as `user:***@`.
+- **Only the machine running the dashboard can change settings.** Anyone who
+  can reach the dashboard can view this page, but saving and camera tests are
+  refused from other machines, because the page edits credentials and the
+  dashboard has no login. Set `SETTINGS_ALLOW_REMOTE=true` in `.env` to lift
+  this (only on a trusted network). It deliberately can't be changed from the
+  page itself. `API_HOST`/`API_PORT` aren't editable either.
+
+API (on the dashboard app, not the standalone Phase 4 API):
+
+| Method | Path | |
+|---|---|---|
+| GET  | `/api/settings` | sections, fields, current values, pending/overridden flags |
+| PUT  | `/api/settings` | `{"values": {KEY: value}}`: validated all-or-nothing, 400 with per-field errors |
+| POST | `/api/settings/test-camera` | `{prefix, url, user, password, transport}` → `{ok, resolution, fps, preview}` |
+
 ## ChromaDB
 
 `phase3_identity/gallery.py` now uses `chromadb.PersistentClient` (embedded, on
