@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "reality-connector-dashboard",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "phase5_dashboard"],
+      "port": 8000
+    },
+    {
+      "name": "manufacturing-intelligence",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "manufacturing_intel"],
+      "port": 8100
+    }
+  ]
+}

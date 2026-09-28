@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manufacturing Process Intelligence</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">M</div>
+      <div class="brand-text"><b>Process Intelligence</b><span>MANUFACTURING</span></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot" id="factory-name"></div>
+  </aside>
+
+  <div class="main-area">
+    <header class="topbar">
+      <h1 id="page-title">Overview</h1>
+      <div class="topbar-right">
+        <span class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">connecting…</span></span>
+      </div>
+    </header>
+
+    <div class="banner" id="sim-banner" hidden>
+      <b>Simulated data.</b> The production numbers on screen come from a factory simulator, not from a real plant. Real events from cameras, scanners or operators are shown alongside once they arrive.
+    </div>
+
+    <div class="filterbar" id="filterbar">
+      <label>Line <select id="f-line"></select></label>
+      <label>Product <select id="f-product"></select></label>
+      <label>Period <select id="f-period"></select></label>
+      <span id="f-custom" hidden>
+        <input type="date" id="f-start"> <span class="muted">to</span> <input type="date" id="f-end">
+      </span>
+      <button class="btn" id="f-refresh" title="Reload">Refresh</button>
+      <span class="muted small" id="f-window"></span>
+    </div>
+
+    <main class="page-body">
+      <section class="page" id="page-overview"></section>
+      <section class="page" id="page-batches"></section>
+      <section class="page" id="page-units"></section>
+      <section class="page" id="page-analytics"></section>
+      <section class="page" id="page-alerts"></section>
+      <section class="page" id="page-assistant"></section>
+      <section class="page" id="page-operator"></section>
+      <section class="page" id="page-cameras"></section>
+      <section class="page" id="page-setup"></section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="/static/core.js"></script>
+<script src="/static/overview.js"></script>
+<script src="/static/production.js"></script>
+<script src="/static/analytics.js"></script>
+<script src="/static/ops.js"></script>
+<script src="/static/setup.js"></script>
+<script>MPI.boot();</script>
+</body>
+</html>
