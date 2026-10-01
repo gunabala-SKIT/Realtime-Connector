@@ -23,9 +23,17 @@ See `Reality_Connector_MVP_Acceptance_Criteria_v0.1.docx` for measurable MVP tar
 | **Phase 14** | PPE / safety compliance — per-zone required items (helmet, vest, …), custom-trained detector, confirmed violations with evidence snapshots | Done — [`phase14_ppe/`](phase14_ppe/README.md). Gloves detection unreliable (see its README). |
 | Phase 15+ | Multi-camera production hardening | Not started |
 
-**Separate product in this repo:** [`manufacturing_intel/`](manufacturing_intel/README.md) - *Manufacturing Process
-Intelligence Platform* (stage-by-stage production tracking, waiting vs processing time, bottlenecks, rejects,
-yield, alerts, assistant). Own database, port (8100) and dashboard; imports nothing from the phases above.
+**Separate products in this repo** (own package, own port, import nothing from the phases above or from
+each other):
+- [`manufacturing_intel/`](manufacturing_intel/README.md) - *Manufacturing Process Intelligence Platform*
+  (stage-by-stage production tracking, waiting vs processing time, bottlenecks, rejects, yield, alerts,
+  assistant). Port 8100.
+- [`garment_cv/`](garment_cv/README.md) - *Garment Manufacturing Computer Vision System* (per-stage activity
+  monitoring: marking, cutting, piece handling, stitching - who's doing what, where, for how long). Port 8200.
+  **All 7 MVP phases done: camera + object detection (COCO stand-in) + tracking (BoT-SORT) + zones
+  + activity detection (rule engine) + production events/database + dashboard** - see its README
+  for what's built and what's deliberately left for later (a real garment-trained model, a
+  dedicated frontend).
 
 ```bash
 python -m phase5_dashboard      # everything, at http://127.0.0.1:8000

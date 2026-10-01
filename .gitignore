@@ -60,3 +60,15 @@ Thumbs.db
 # Manufacturing Process Intelligence Platform - local data (database, generated sample video)
 manufacturing_intel/data/
 manufacturing_intel/.env
+
+# Garment Manufacturing CV - local config/data (camera credentials, drawn zones, test clips, the
+# Phase 6 database)
+garment_cv/configs/.env
+garment_cv/configs/zones.json
+garment_cv/configs/zones.tmp
+garment_cv/configs/garment.db
+garment_cv/media/
+garment_cv/tests/_*.mp4
+# ...but DO commit the real test photo several tests depend on (cv2.imread'd, not generated) -
+# the blanket *.jpg/*.png/*.mp4 rules above are meant for runtime snapshots/captures, not fixtures
+!garment_cv/tests/assets/*.jpg

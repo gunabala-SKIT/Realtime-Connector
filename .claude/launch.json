@@ -12,6 +12,12 @@
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "manufacturing_intel"],
       "port": 8100
+    },
+    {
+      "name": "garment-cv",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "garment_cv"],
+      "port": 8200
     }
   ]
 }
