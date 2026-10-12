@@ -43,14 +43,24 @@ class ActivityConfig:
                                       # without this, one missed detection frame (occlusion, a hand
                                       # briefly blocking the view) would restart every timer from zero
     movement_window_s: float          # how far back to look when judging "is this object moving"
-    movement_min_fraction: float      # minimum displacement within that window, as a fraction of the
-                                      # frame's diagonal, to count as movement rather than noise/jitter
+    movement_min_fraction: float      # minimum motion within that window, as a fraction of the frame's
+                                      # diagonal, to count as movement rather than detector jitter. "Motion"
+                                      # is the distance the object's centre travelled plus how much its box
+                                      # changed size (a pair of scissors snips in place: its position barely
+                                      # moves, but the box shrinks and grows as the blades open and close)
     attribution_margin: float         # how far a tool's box may sit outside a person's own box (as a
                                       # fraction of the person's box size) and still count as theirs -
                                       # a hand holding scissors extends past the body outline
     max_history: int                  # completed activities also kept in memory, capped, for fast
                                       # no-DB-round-trip access - the database (Phase 6) is the
                                       # durable copy; this cap only bounds the in-memory one
+    require_cloth_contact: bool = True  # spec section 3's "Fabric detected" condition. Turn off if the
+                                      # model can't see the cloth in practice (a small scrap held in the
+                                      # hand is mostly hidden by fingers): cutting then no longer needs
+                                      # cloth, so waving scissors around in a cutting zone can count too
+    contact_margin_fraction: float = 0.008  # how close (fraction of the frame diagonal) a tool must be
+                                      # to cloth to count as "on" it - only used when the loaded model
+                                      # can actually see cloth (see ActivityEngine.configure)
 
     @classmethod
     def load(cls) -> "ActivityConfig":
@@ -64,7 +74,9 @@ class ActivityConfig:
             idle_min_s=_get_float("GARMENT_ACTIVITY_IDLE_MIN_S", 10.0),
             grace_s=_get_float("GARMENT_ACTIVITY_GRACE_S", 1.5),
             movement_window_s=_get_float("GARMENT_ACTIVITY_MOVEMENT_WINDOW_S", 2.0),
-            movement_min_fraction=_get_float("GARMENT_ACTIVITY_MOVEMENT_MIN_FRACTION", 0.03),
+            movement_min_fraction=_get_float("GARMENT_ACTIVITY_MOVEMENT_MIN_FRACTION", 0.0028),
             attribution_margin=_get_float("GARMENT_ACTIVITY_ATTRIBUTION_MARGIN", 0.3),
             max_history=_get_int("GARMENT_ACTIVITY_MAX_HISTORY", 200),
+            contact_margin_fraction=_get_float("GARMENT_ACTIVITY_CONTACT_MARGIN", 0.008),
+            require_cloth_contact=_get_bool("GARMENT_ACTIVITY_REQUIRE_CLOTH", True),
         )

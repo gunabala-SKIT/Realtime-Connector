@@ -158,3 +158,23 @@ created when their phase starts, matching this document's phase order.
   real garment-trained detection model (§7 - the COCO stand-in remains Phase 2's disclosed
   limitation), and a dedicated frontend build (the dashboard is server-rendered HTML/JS, which the
   spec never requires replacing).
+- **2026-10-01: a synthetic training pipeline proof** (`garment_cv/training/`) — explicitly not
+  real training data, and not a Phase 2 replacement. Procedurally-drawn geometric shapes stand in
+  for the 7 §6 classes with no COCO match (a flat rectangle for `fabric`, ruler tick marks for
+  `measuring_scale`, ...), fine-tuned into a real `.pt` weight via the exact same Ultralytics
+  training call §23's stack calls for. Its only purpose is proving the dataset → train →
+  `GARMENT_DETECT_MODEL` swap-in pipeline genuinely works before any real garment-factory data
+  exists - see `garment_cv/training/README.md` for the full disclosure. The demo weight recognizes
+  only these synthetic shapes; it is not, and is not presented as, a step toward real detection.
+  Measured mAP50 0.977 on a held-out test split - high because the shapes are trivially easy to
+  tell apart, not because real-world detection would be this reliable.
+  - **A real `ObjectDetector` bug surfaced trying to actually use this weight**, not just training
+    it: `start()` unconditionally rejected any model whose classes didn't overlap the COCO stand-in
+    vocabulary (`person`/`scissors`/`dining table`) - correct for catching an accidentally-wrong
+    model, but it also rejected this genuinely-different, fully custom-trained one, since it shares
+    zero classes with COCO. Fixed by distinguishing the two cases: zero overlap now means "a
+    different kind of model", using everything it offers, rather than "misconfigured". `status()`'s
+    `detected_classes`/`not_yet_detectable` and a new `custom_model` flag reflect whichever mode
+    actually loaded. Verified on a real live server, not just a standalone script: `/api/status`
+    correctly reports `custom_model: true` and the full 7-class list, and `/api/detections`/the
+    annotated stream correctly box and label real synthetic objects frame by frame.

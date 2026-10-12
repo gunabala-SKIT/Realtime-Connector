@@ -296,6 +296,96 @@ class EngineDisabled(unittest.TestCase):
         self.assertEqual(e.recent(), [])
 
 
+class SnippingInPlace(unittest.TestCase):
+    """Real cutting barely moves the scissors' centre - the hands stay put while the blades open and
+    close - so the old "net drift > 3% of the frame diagonal" rule never fired on real footage. The
+    numbers here mirror what was measured on real clips: a pair of scissors lying still moved
+    1-6 px over a 2 s window, real cutting 11-57 px (box size change included)."""
+
+    def _run(self, boxes, **cfg_kw):
+        e = ActivityEngine(cfg(cutting_min_s=2.0, movement_min_fraction=0.0028, **cfg_kw))
+        t, result = 0.0, {}
+        for box in boxes:
+            result = e.update("cam-1", [person(1), scissors(box)], t, *FRAME)
+            t += 0.5
+        return result
+
+    def test_blades_opening_and_closing_in_place_counts_as_cutting(self):
+        # centre drifts ~5 px and the box width swings 30 <-> 40 px: nowhere near 3% (42 px) of drift
+        boxes = [(120, 200, 150 + (i % 2) * 10, 230) for i in range(20)]
+        self.assertEqual(self._run(boxes)[1], "CUTTING")
+
+    def test_scissors_lying_still_with_detector_jitter_never_counts(self):
+        boxes = [(120 + (i % 2), 200, 150 + (i % 2), 230) for i in range(20)]   # +-1 px box jitter
+        self.assertIsNone(self._run(boxes)[1])
+
+
+class ClothContact(unittest.TestCase):
+    """Spec section 3's own "Fabric detected" condition: scissors held up in the air, or lying away
+    from the cloth, are not cutting. Only applies once the detector has told the engine its model
+    can see cloth - the COCO stand-in can't, and must keep working as before."""
+
+    SNIP = [(120, 200, 150 + (i % 2) * 10, 230) for i in range(20)]
+
+    def _fabric(self, box, cls="fabric"):
+        return FakeDet(cls, box, None, None, None, 0.9)
+
+    def _run(self, vocabulary, extra, boxes=None):
+        e = ActivityEngine(cfg(cutting_min_s=2.0, movement_min_fraction=0.0028))
+        if vocabulary is not None:
+            e.configure(vocabulary)
+        t, result = 0.0, {}
+        for box in (boxes or self.SNIP):
+            result = e.update("cam-1", [person(1), scissors(box)] + extra, t, *FRAME)
+            t += 0.5
+        return result
+
+    GARMENT = {"person", "scissors", "fabric", "fabric_piece", "marking_tool"}
+
+    def test_scissors_touching_cloth_count(self):
+        self.assertEqual(self._run(self.GARMENT, [self._fabric((80, 231, 400, 330))])[1], "CUTTING")
+
+    def test_a_cut_piece_counts_as_cloth_too(self):
+        self.assertEqual(self._run(self.GARMENT, [self._fabric((80, 231, 400, 330), "fabric_piece")])[1], "CUTTING")
+
+    def test_scissors_far_from_the_cloth_do_not_count(self):
+        self.assertIsNone(self._run(self.GARMENT, [self._fabric((80, 400, 400, 500))])[1])
+
+    def test_no_cloth_in_the_frame_at_all_does_not_count(self):
+        self.assertIsNone(self._run(self.GARMENT, [])[1])
+
+    def test_a_model_that_cannot_see_cloth_skips_the_requirement(self):
+        # the COCO stand-in: no cloth class exists, so "no cloth detected" must not block cutting
+        self.assertEqual(self._run({"person", "scissors", "table"}, [])[1], "CUTTING")
+
+    def test_the_requirement_can_be_switched_off(self):
+        # a small scrap held in the hand is mostly hidden, so the model sees no cloth at all
+        e = ActivityEngine(cfg(cutting_min_s=2.0, movement_min_fraction=0.0028, require_cloth_contact=False))
+        e.configure(self.GARMENT)
+        t, result = 0.0, {}
+        for box in self.SNIP:
+            result = e.update("cam-1", [person(1), scissors(box)], t, *FRAME)
+            t += 0.5
+        self.assertEqual(result[1], "CUTTING")
+
+    def test_an_engine_never_told_the_vocabulary_behaves_like_the_stand_in(self):
+        self.assertEqual(self._run(None, [])[1], "CUTTING")
+
+
+class StatusFromVocabulary(unittest.TestCase):
+    def test_a_garment_model_makes_more_rules_reachable(self):
+        e = ActivityEngine(cfg())
+        e.configure({"person", "scissors", "marking_tool", "fabric", "fabric_piece"})
+        st = e.status()
+        self.assertEqual(st["reachable_now"], ["CUTTING", "MARKING", "PIECE_HANDLING"])
+        self.assertEqual(st["dormant"], ["STITCHING"])
+
+    def test_the_coco_stand_in_keeps_only_cutting_reachable(self):
+        e = ActivityEngine(cfg())
+        e.configure({"person", "scissors", "table"})
+        self.assertEqual(e.status()["reachable_now"], ["CUTTING"])
+
+
 class OnCompleteHook(unittest.TestCase):
     """Phase 6's seam: `ActivityEngine` itself must stay ignorant of events/database - it only
     calls a plain callback with each finished `CompletedActivity`."""

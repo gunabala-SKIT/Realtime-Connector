@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from garment_cv.backend.detection.config import DetectionConfig
+from garment_cv.backend.detection.config import DetectionConfig, _parse_class_conf
 
 
 class EnvLoading(unittest.TestCase):
@@ -45,3 +45,23 @@ class EnvLoading(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerClassConfidence(unittest.TestCase):
+    def test_parses_name_value_pairs(self):
+        self.assertEqual(_parse_class_conf("scissors=0.10, fabric_piece=0.2"),
+                         {"scissors": 0.10, "fabric_piece": 0.2})
+
+    def test_empty_or_missing_means_no_overrides(self):
+        self.assertEqual(_parse_class_conf(None), {})
+        self.assertEqual(_parse_class_conf(""), {})
+
+    def test_a_malformed_entry_is_skipped_not_fatal(self):
+        self.assertEqual(_parse_class_conf("scissors=low,person=0.5,=0.3,junk"), {"person": 0.5})
+
+    def test_loaded_from_the_environment(self):
+        os.environ["GARMENT_DETECT_CLASS_CONF"] = "scissors=0.12"
+        try:
+            self.assertEqual(DetectionConfig.load().class_conf, {"scissors": 0.12})
+        finally:
+            os.environ.pop("GARMENT_DETECT_CLASS_CONF", None)

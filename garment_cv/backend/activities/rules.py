@@ -6,11 +6,14 @@ changing what it requires) never touches `engine.py`'s logic.
 
 Which rules can actually fire right now, given the COCO stand-in (see `detection/coco_standin.py`):
 
-  CUTTING          person + scissors + a "cutting" zone + scissors movement  -> CAN fire. This
-                   drops the spec's own "Fabric detected" condition (spec section 3), because
-                   fabric has no COCO stand-in at all - disclosed here, not silently dropped.
-                   Movement is required because spec section 3 is explicit that a static scissors
-                   detection alone must never be treated as cutting.
+  CUTTING          person + scissors + a "cutting" zone + scissors movement  -> CAN fire. With the
+                   COCO stand-in it drops the spec's own "Fabric detected" condition (spec section
+                   3), because that model has no cloth class - disclosed here, not silently dropped.
+                   With a garment-trained model that can see cloth, the condition is restored: the
+                   scissors must also be touching cloth (`contact_classes`). Movement is required
+                   because spec section 3 is explicit that a static scissors detection alone must
+                   never be treated as cutting; it's measured as how much the scissors' position and
+                   box size spread over a 2 s window, since real snipping barely moves the centre.
   MARKING          needs `marking_tool`  -> never fires; that class doesn't exist in this model.
   STITCHING        needs `sewing_machine` -> never fires; that class doesn't exist in this model.
   PIECE_HANDLING   needs `fabric_piece`   -> never fires; that class doesn't exist in this model.
@@ -34,16 +37,24 @@ class ActivityRule:
     required_classes: frozenset[str]  # detected classes that must be attributed to the person
     requires_movement: bool          # if True, the attributed object must show real movement,
                                      # not just be present (spec section 3's "holding ≠ using")
+    contact_classes: frozenset[str] = frozenset()  # if non-empty AND the loaded model can see at least
+                                     # one of these, the object must also be touching one - the spec's
+                                     # own "Fabric detected" condition (section 3). Ignored when the
+                                     # model can't see cloth at all (the COCO stand-in), so that case
+                                     # keeps working as before
 
 
 RULES: tuple[ActivityRule, ...] = (
-    ActivityRule("CUTTING", "cutting", frozenset({"scissors"}), requires_movement=True),
+    ActivityRule("CUTTING", "cutting", frozenset({"scissors"}), requires_movement=True,
+                 contact_classes=frozenset({"fabric", "fabric_piece"})),
     ActivityRule("MARKING", "marking", frozenset({"marking_tool"}), requires_movement=True),
     ActivityRule("STITCHING", "stitching", frozenset({"sewing_machine"}), requires_movement=False),
     ActivityRule("PIECE_HANDLING", "piece_handling", frozenset({"fabric_piece"}), requires_movement=False),
 )
 
-# Rules whose required class the current COCO stand-in can ever actually produce (see the module
-# docstring). Everything else is real, tested code that is simply never reachable yet - the API
-# and the status page both say so explicitly, the same way Phase 2 discloses undetectable classes.
+# Rules whose required class the COCO stand-in can ever actually produce (see the module
+# docstring). `ActivityEngine.status()` recomputes this from the loaded model's real vocabulary
+# once the detector tells it (`ActivityEngine.configure`) - a garment-trained model that knows
+# `marking_tool` or `fabric_piece` makes those rules reachable too - and falls back to this
+# constant until then, the same way Phase 2 discloses undetectable classes.
 REACHABLE_NOW = frozenset({"CUTTING"})

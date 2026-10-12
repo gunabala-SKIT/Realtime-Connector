@@ -44,8 +44,8 @@ class CompletedActivity:
 class _TrackState:
     rule_since: dict[str, float] = field(default_factory=dict)       # rule name -> when its raw condition first held
     rule_last_ok: dict[str, float] = field(default_factory=dict)     # rule name -> last tick it held (for grace)
-    rule_positions: dict[str, deque] = field(default_factory=dict)   # rule name -> deque[(ts, cx, cy)] of the
-                                                                     # attributed object, for movement rules
+    rule_positions: dict[str, deque] = field(default_factory=dict)   # rule name -> deque[(ts, cx, cy, w, h)] of
+                                                                     # the attributed object, for movement rules
     rule_confidences: dict[str, list[float]] = field(default_factory=dict)
     active: str | None = None       # the rule confirmed and ongoing right now (or "IDLE"), if any
     active_since: float = 0.0
@@ -77,6 +77,13 @@ def _attribute(person_box, candidates: list[_DetectionLike], margin: float) -> _
     return best
 
 
+def _gap(a, b) -> float:
+    """Pixel distance between two boxes' edges - 0 when they touch or overlap."""
+    dx = max(b[0] - a[2], a[0] - b[2], 0.0)
+    dy = max(b[1] - a[3], a[1] - b[3], 0.0)
+    return (dx * dx + dy * dy) ** 0.5
+
+
 class ActivityEngine:
     def __init__(self, cfg: ActivityConfig, on_complete: Callable[[CompletedActivity], None] | None = None) -> None:
         self.cfg = cfg
@@ -91,6 +98,20 @@ class ActivityEngine:
         # docstring on `frame_hooks`). `ActivityEngine` never imports `events/` or `database/`
         # itself - the same decoupling already used for `_ZoneLookup`/`_ActivityLookup` above.
         self._on_complete = on_complete
+        # The class names the loaded detection model can actually produce, once the detector says
+        # (see `configure`). None means "not told" - treated as the COCO stand-in, which cannot see
+        # cloth, so rules that want cloth contact skip that requirement rather than never firing.
+        self._vocabulary: frozenset[str] | None = None
+
+    def configure(self, vocabulary) -> None:
+        """Called by the detector once its model is loaded. Lets the engine tell apart "cloth isn't
+        in this frame" (a real reason not to call it cutting) from "this model can't see cloth at
+        all" (nothing to check)."""
+        with self._lock:
+            self._vocabulary = frozenset(vocabulary)
+
+    def _model_sees(self, classes: frozenset[str]) -> bool:
+        return self._vocabulary is not None and bool(self._vocabulary & classes)
 
     def _min_duration(self, rule_name: str) -> float:
         return {"CUTTING": self.cfg.cutting_min_s, "MARKING": self.cfg.marking_min_s,
@@ -137,6 +158,16 @@ class ActivityEngine:
             if p.zone_activity == rule.zone_activity:
                 candidates = [d for d in others if d.cls in rule.required_classes]
                 obj = _attribute(p.box, candidates, self.cfg.attribution_margin)
+                if (obj is not None and rule.contact_classes and self.cfg.require_cloth_contact
+                        and self._model_sees(rule.contact_classes)):
+                    # spec section 3's "Fabric detected": scissors floating in the air, or lying
+                    # away from the cloth, are not cutting - measured on real footage, cutting
+                    # scissors sat on the cloth (0 px gap) the whole time while held-up ones hovered
+                    # 40-90 px above it
+                    cloth = [d for d in others if d.cls in rule.contact_classes]
+                    margin = self.cfg.contact_margin_fraction * diag
+                    if not any(_gap(obj.box, d.box) <= margin for d in cloth):
+                        obj = None
                 if obj is not None:
                     if rule.requires_movement:
                         ok = self._moved_enough(st, rule.name, obj, ts, diag)
@@ -161,16 +192,23 @@ class ActivityEngine:
         return matched
 
     def _moved_enough(self, st: _TrackState, rule_name: str, obj: _DetectionLike, ts: float, diag: float) -> bool:
+        """Real cutting barely moves the scissors' centre (the hands stay put while the blades snip),
+        so net drift from the first sample - what this used to measure, against a 3% threshold tuned
+        on synthetic data - never fired on real footage. Motion here is how far the object's centre
+        and its box size *spread* within the window: the range of x, of y, of width and of height,
+        summed (the blades opening and closing change the box size even when the position barely
+        moves). A range, not a path length, so it doesn't grow with how often frames are sampled -
+        the live app samples faster than the clips this was measured on. Over 2 s windows on real
+        clips: scissors lying still scored 1-6 px, real cutting 11-57 px."""
         buf = st.rule_positions.setdefault(rule_name, deque())
         cx, cy = _center(obj.box)
-        buf.append((ts, cx, cy))
+        buf.append((ts, cx, cy, obj.box[2] - obj.box[0], obj.box[3] - obj.box[1]))
         while buf and ts - buf[0][0] > self.cfg.movement_window_s:
             buf.popleft()
         if len(buf) < 2:
             return False
-        x0, y0 = buf[0][1], buf[0][2]
-        spread = max(((x - x0) ** 2 + (y - y0) ** 2) ** 0.5 for _, x, y in buf)
-        return (spread / diag) >= self.cfg.movement_min_fraction
+        motion = sum(max(p[k] for p in buf) - min(p[k] for p in buf) for k in (1, 2, 3, 4))
+        return (motion / diag) >= self.cfg.movement_min_fraction
 
     def _advance(self, st: _TrackState, rule_name: str, ok: bool, ts: float, min_duration: float) -> bool:
         """Shared streak/grace/confirm bookkeeping for one rule on one track (the same shape as
@@ -259,6 +297,10 @@ class ActivityEngine:
                    for tid, st in self._tracks.items()}
 
     def status(self) -> dict:
-        return {"enabled": self.cfg.enabled, "rules": [r.name for r in RULES], "reachable_now": sorted(REACHABLE_NOW),
-               "dormant": sorted(r.name for r in RULES if r.name not in REACHABLE_NOW),
+        if self._vocabulary is None:
+            reachable = set(REACHABLE_NOW)
+        else:
+            reachable = {r.name for r in RULES if r.required_classes & self._vocabulary}
+        return {"enabled": self.cfg.enabled, "rules": [r.name for r in RULES], "reachable_now": sorted(reachable),
+               "dormant": sorted(r.name for r in RULES if r.name not in reachable),
                "tracked": len(self._tracks), "history_count": len(self._history)}

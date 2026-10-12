@@ -15,6 +15,12 @@ same object as last frame, and which zone (if any) they're standing in", using a
 COCO-pretrained model as a placeholder until real garment-factory training data exists (spec
 section 7). See `coco_standin.py` for exactly which of the spec's required classes that can and
 can't stand in for.
+
+A model whose classes don't overlap with that COCO stand-in vocabulary at all (e.g. a fully
+custom-trained model - see `garment_cv/training/`) is a genuinely different situation from a
+misconfigured one, not treated as an error: `start()` falls back to using every class *that* model
+offers, instead of refusing to enable detection. `status()`'s `detected_classes`/
+`not_yet_detectable` reflect whichever mode actually loaded.
 """
 from __future__ import annotations
 
@@ -75,6 +81,7 @@ class ObjectDetector:
         self.model = None
         self.names: dict[int, str] = {}
         self._wanted_ids: list[int] = []
+        self._custom_model = False  # True once `start()` loads a model with no COCO stand-in overlap
         self.device = "cpu"
         # ultralytics deprecated the `half=` predict() argument in favour of `quantize=` (16 ==
         # the old half=True, None == FP32/half=False); keep the config's own field named `half`
@@ -105,9 +112,19 @@ class ObjectDetector:
 
         model = YOLO(self.cfg.model)
         self.names = {int(k): v for k, v in model.names.items()}
-        self._wanted_ids = sorted(i for i, n in self.names.items() if n in COCO_TO_GARMENT)
+        coco_ids = sorted(i for i, n in self.names.items() if n in COCO_TO_GARMENT)
+        # A model with zero overlap with the COCO stand-in vocabulary isn't misconfigured - it's a
+        # genuinely different (e.g. fully custom-trained) model, so fall back to using everything
+        # it offers rather than refusing to enable detection at all. Overlap alone isn't enough to
+        # call it the COCO stand-in, though: a garment-trained model also knows `person` and
+        # `scissors`, and filtering it down to just those would hide the very classes it was
+        # trained for. If the model itself produces a garment class COCO has no equivalent for
+        # (fabric, marking_tool, ...), it is a garment model and every class is used.
+        has_garment_classes = any(n in NOT_YET_DETECTABLE for n in self.names.values())
+        self._custom_model = (not coco_ids) or has_garment_classes
+        self._wanted_ids = coco_ids if not self._custom_model else sorted(self.names.keys())
         if not self._wanted_ids:
-            self.disabled_reason = f"none of {sorted(COCO_TO_GARMENT)} found in {self.cfg.model}'s classes"
+            self.disabled_reason = f"{self.cfg.model} reports zero classes"
             self.log.warning("Object detection disabled - %s", self.disabled_reason)
             return
         self.device = self.cfg.device or (0 if torch.cuda.is_available() else "cpu")
@@ -120,10 +137,21 @@ class ObjectDetector:
                           verbose=False)  # warm-up
         self.model = model
         self.enabled, self.disabled_reason = True, None
-        self.log.info("Object detection ready. model=%s device=%s classes=%s tracker=%s (%s not yet "
-                      "detectable - see coco_standin.py)", self.cfg.model, self.device,
-                      sorted(COCO_TO_GARMENT.values()), self.tracking.tracker if self.tracking.enabled else "off",
-                      len(NOT_YET_DETECTABLE))
+        # Tell the activity engine which classes this model can actually produce, so it can tell
+        # "no cloth in this frame" from "this model can't see cloth at all". Duck-typed and
+        # optional: the engine is only reached through the small `_ActivityLookup` protocol.
+        configure = getattr(self.activities, "configure", None)
+        if configure is not None:
+            configure(self.names.values() if self._custom_model else COCO_TO_GARMENT.values())
+        if self._custom_model:
+            self.log.info("Object detection ready. model=%s device=%s classes=%s tracker=%s (custom "
+                          "model - not the COCO stand-in)", self.cfg.model, self.device,
+                          sorted(self.names.values()), self.tracking.tracker if self.tracking.enabled else "off")
+        else:
+            self.log.info("Object detection ready. model=%s device=%s classes=%s tracker=%s (%s not yet "
+                          "detectable - see coco_standin.py)", self.cfg.model, self.device,
+                          sorted(COCO_TO_GARMENT.values()), self.tracking.tracker if self.tracking.enabled else "off",
+                          len(NOT_YET_DETECTABLE))
 
     # --------------------------------------------------------------------- hook
     def observe(self, camera_id: str, frame, ts: float) -> None:
@@ -160,7 +188,11 @@ class ObjectDetector:
         by `persist=True` from one call to the next, so `detect()` must be called on frames *in
         order* for IDs to mean anything (exactly as it already is, from `observe()`)."""
         t0 = time.perf_counter()
-        common = dict(imgsz=self.cfg.imgsz, conf=self.cfg.conf, iou=self.cfg.iou, classes=self._wanted_ids,
+        # The model is asked for everything above the LOWEST threshold in play; each class is then held
+        # to its own bar below. A class's override can only be looser than `conf` or stricter - either
+        # way the model must be run at the minimum so a looser override isn't cut off before it's seen.
+        floor = min([self.cfg.conf, *self.cfg.class_conf.values()])
+        common = dict(imgsz=self.cfg.imgsz, conf=floor, iou=self.cfg.iou, classes=self._wanted_ids,
                      device=self.device, quantize=self._quantize, verbose=False)
         if self.tracking.enabled:
             r = self.model.track(frame, persist=True, tracker=self.tracking.tracker, **common)[0]
@@ -174,7 +206,13 @@ class ObjectDetector:
             ids = boxes.id.int().tolist() if boxes.id is not None else [None] * len(boxes)
             for b, c, p, tid in zip(boxes.xyxy.tolist(), boxes.cls.tolist(), boxes.conf.tolist(), ids):
                 coco_name = self.names[int(c)]
-                out.append(Detection(cls=COCO_TO_GARMENT[coco_name], coco_name=coco_name,
+                cls_name = COCO_TO_GARMENT.get(coco_name, coco_name)
+                if float(p) < self.cfg.class_conf.get(cls_name, self.cfg.conf):
+                    continue
+                # .get(..., coco_name): in custom-model mode this name isn't a COCO class at all,
+                # so it passes through unchanged - in COCO stand-in mode `_wanted_ids` already
+                # guarantees every name here is a COCO_TO_GARMENT key, so this is unchanged there.
+                out.append(Detection(cls=COCO_TO_GARMENT.get(coco_name, coco_name), coco_name=coco_name,
                                      conf=float(p), box=tuple(float(v) for v in b), track_id=tid))
         return out
 
@@ -219,10 +257,15 @@ class ObjectDetector:
     def status(self) -> dict:
         with self._lock:
             dets, ts = self._detections, self._ts
+        if self._custom_model:
+            detected_classes, not_yet_detectable = sorted(self.names.values()), []
+        else:
+            detected_classes, not_yet_detectable = sorted(COCO_TO_GARMENT.values()), list(NOT_YET_DETECTABLE)
         return {
             "enabled": self.enabled, "disabled_reason": self.disabled_reason, "model": self.cfg.model,
+            "custom_model": self._custom_model,
             "device": str(self.device), "infer_ms": round(self.infer_ms, 1), "infer_count": self.infer_count,
-            "detected_classes": sorted(COCO_TO_GARMENT.values()), "not_yet_detectable": list(NOT_YET_DETECTABLE),
+            "detected_classes": detected_classes, "not_yet_detectable": not_yet_detectable,
             "tracking_enabled": self.tracking.enabled, "tracker": self.tracking.tracker if self.tracking.enabled else None,
             "ts": ts or None,
             "detections": [{"class": d.cls, "coco_class": d.coco_name, "confidence": round(d.conf, 3),

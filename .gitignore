@@ -72,3 +72,9 @@ garment_cv/tests/_*.mp4
 # ...but DO commit the real test photo several tests depend on (cv2.imread'd, not generated) -
 # the blanket *.jpg/*.png/*.mp4 rules above are meant for runtime snapshots/captures, not fixtures
 !garment_cv/tests/assets/*.jpg
+# Synthetic training pipeline (proof of concept, not real training data - see
+# garment_cv/training/README.md): the dataset and demo weight are both cheap and fast to
+# regenerate (`make_synthetic_dataset.py` then `train_synthetic.py`, seconds not hours), unlike
+# phase14_ppe's real trained model below - so neither is tracked here.
+garment_cv/training/datasets/
+garment_cv/models/

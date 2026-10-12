@@ -80,7 +80,18 @@ currently doing, so it's fully testable with hand-built scenarios and no GPU nee
   person, and whether that object must show real movement (not just be present) — CUTTING requires
   movement precisely because a static scissors detection must never count as cutting.
 - **Given the COCO stand-in, only CUTTING can actually fire** (person + scissors + a "cutting" zone
-  + real scissors movement). MARKING/STITCHING/PIECE_HANDLING are fully implemented and fully
+  + real scissors movement). With a garment-trained model the engine is told what the model can see
+  (`ActivityEngine.configure`), `reachable_now`/`dormant` follow from that, and CUTTING additionally
+  requires the scissors to be touching cloth - the spec's own "Fabric detected" condition, restored
+  once a model can see cloth.
+- **"Movement" is measured on real footage, not assumed.** The first version needed the scissors'
+  centre to drift 3% of the frame diagonal; real cutting (hands stay put, blades snip) never did
+  that, so it never fired. Replaying real clips showed scissors lying still spread 1-6 px over a 2 s
+  window and real cutting 11-57 px, so movement is now the spread of the box's position *and size*,
+  threshold 0.28% of the diagonal. Both new conditions were checked against real clips: with only
+  the lower threshold, "holding scissors, not cutting" also fired CUTTING; with only the cloth
+  contact rule, real cutting still didn't. Calibrated on a single short session by one person, so
+  treat the margin (6 px vs 11 px) as thin. MARKING/STITCHING/PIECE_HANDLING are fully implemented and fully
   tested — thresholds, zone-activity matching, the works — but structurally dormant: their required
   classes (`marking_tool`, `sewing_machine`, `fabric_piece`) don't exist anywhere in this model's
   80-class vocabulary. `GET /api/activities` and the status page both say so explicitly
@@ -474,11 +485,32 @@ together, their name/ID/confidence/zone labels can visually overlap in the annot
 underlying data is correct either way (confirmed via `/api/detections`); this is purely a label
 layout nicety, left for a later pass.
 
+## Training pipeline proof (not real training data)
+
+`garment_cv/training/` generates a synthetic dataset (simple drawn shapes standing in for the 7
+classes with no COCO match — a flat rectangle for `fabric`, ruler tick marks for
+`measuring_scale`, ...) and fine-tunes a real YOLO weight on it (mAP50 0.977 on a held-out test
+split — high because the shapes are trivially easy to tell apart, not evidence of real-world
+accuracy), proving the dataset → train → `GARMENT_DETECT_MODEL` swap-in pipeline works end to end
+before any real garment-factory data exists. **It is not a step toward real detection** — the
+resulting model only recognizes these specific synthetic shapes. Verified against a real live
+server, not just a standalone script: `/api/status` and `/api/detections` correctly reflect the
+custom model's own 7 classes, and the annotated stream correctly boxes/labels them frame by frame.
+
+Trying this required one real fix: `ObjectDetector` previously rejected *any* model with zero class
+overlap with the COCO stand-in vocabulary outright, which is correct for catching an
+accidentally-wrong model but also caught this genuinely-different, fully custom one. `start()` now
+tells the two cases apart — zero overlap means "a different kind of model", not "misconfigured" —
+and a new `custom_model` field in `/api/status` says which mode is actually active.
+
+Full disclosure and how to run it: [`training/README.md`](training/README.md).
+
 ## What comes next (beyond the MVP)
 
 All seven of the spec's own phases (section 21) are built. What's left isn't a skipped MVP step —
 it's work the spec itself places after the MVP:
 - A real garment-trained detection model (section 7), replacing the COCO stand-in disclosed since
-  Phase 2 — needs real production-floor training data the user doesn't have yet.
+  Phase 2 — needs real production-floor training data the user doesn't have yet. The synthetic
+  pipeline above proves the *mechanism* for this is ready; only real data is missing.
 - A dedicated frontend build, if the server-rendered `/dashboard` page ever needs to grow beyond
   what plain HTML/JS comfortably supports.
