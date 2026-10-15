@@ -259,6 +259,16 @@ class Modes(unittest.TestCase):
         r.close()
 
 
+class DecisionsAreSentAtOnce(unittest.TestCase):
+    def test_a_decision_wakes_the_sender_instead_of_waiting_for_the_next_poll(self):
+        r = Rig()
+        r.bridge.poll_once()
+        r.bridge._wake.clear()
+        r.seconds(4, MARK)                                      # the bridge decides to start Marking
+        self.assertTrue(r.bridge._wake.is_set())
+        r.close()
+
+
 class Failures(unittest.TestCase):
     def test_odoo_outage_delays_the_action_and_it_is_applied_once_when_back(self):
         r = Rig()

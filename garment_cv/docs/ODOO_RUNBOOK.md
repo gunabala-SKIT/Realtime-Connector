@@ -31,7 +31,7 @@ finished cutting closes operation 2 and the manufacturing order (MO).
 |---|---|
 | Start Marking | MARKING confirmed (3 s by the engine) and held `START_HOLD_S` more |
 | Marking done + Cutting start | CUTTING confirmed and held `HANDOFF_HOLD_S` |
-| Cutting done + MO done | at least `MIN_ACTIVE_S` of cutting in total, then `QUIET_S` with no cutting, camera frames arriving throughout |
+| Cutting done + MO done | at least `MIN_ACTIVE_S` (10 s) of cutting in total, then `QUIET_S` (**15 s** by default) with no cutting - the worker idle, walking away or anything else that is not cutting - camera frames arriving throughout |
 
 Picking up or putting down scissors never confirms CUTTING (the engine needs scissors **on cloth and
 moving**), so it cannot finish anything. A pause shorter than `QUIET_S` does not finish the job; if
@@ -69,4 +69,6 @@ operations first), or change it directly in Odoo - the bridge follows Odoo's sta
 - The dashboard endpoints have no authentication (like the rest of this app) - keep `GARMENT_HOST` on
   localhost or put it behind your network controls.
 - Calibrate `QUIET_S` / `MIN_ACTIVE_S` to your real jobs in shadow mode: a worker who pauses longer than
-  `QUIET_S` mid-job would be finished early.
+  `QUIET_S` (15 s by default) mid-job would be finished early. The order closes in Odoo roughly `QUIET_S` plus a
+  few seconds after the last cut: the activity engine takes ~1.5 s to notice the cutting has stopped, and each
+  Odoo call takes a moment.

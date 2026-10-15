@@ -39,7 +39,8 @@ class FlowConfig:
     start_hold_s: float = 2.0        # activity must stay confirmed this long before a step starts
     handoff_hold_s: float = 3.0      # next step's activity must stay confirmed this long to hand off
     min_active_s: float = 10.0       # last step: minimum cumulative activity before it may finish
-    quiet_s: float = 45.0            # last step: healthy no-activity time before it finishes
+    quiet_s: float = 15.0            # last step: healthy no-activity time before it finishes - the worker
+                                     # idle, walking away or otherwise not cutting for this long ends the job
     hold_grace_s: float = 3.0        # a hold survives the activity dropping out for this long
     max_gap_s: float = 5.0           # observations further apart than this are a camera outage:
                                      # the clock pauses rather than counting it as activity or quiet

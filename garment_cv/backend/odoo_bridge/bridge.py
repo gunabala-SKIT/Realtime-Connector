@@ -91,6 +91,7 @@ class OdooBridge:
         self.last_poll: float = 0.0
         self.workcenter: dict | None = None
         self._stop = threading.Event()
+        self._wake = threading.Event()               # set when there is something new to send: skip the wait
         self._thread: threading.Thread | None = None
 
     # ----------------------------------------------------------------------------- persistence
@@ -141,6 +142,7 @@ class OdooBridge:
         self._add_outbox(d.kind, wo_id, step.name, d.reason, ev)
         if d.kind == "FINISH" and d.step == len(self.tracker.steps) - 1:
             self._add_outbox("MO_DONE", None, step.name, "last operation finished", ev)
+        self._wake.set()
 
     def _add_outbox(self, action: str, wo_id: int | None, step_name: str, reason: str, evidence: str) -> None:
         # never queue the same pending action twice for the same work order (idempotent by construction)
@@ -178,6 +180,7 @@ class OdooBridge:
                 if step == len(self._wo_ids) - 1:
                     self._add_outbox("MO_DONE", None, self.tracker.steps[step].name, "manual override", "{}")
             self._audit("manual", f"operator requested {action} of {self.tracker.steps[step].name}", self.production_id, self._wo_ids[step])
+            self._wake.set()
 
     def retry_failed(self) -> int:
         with self._lock:
@@ -200,6 +203,7 @@ class OdooBridge:
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread:
             self._thread.join(timeout=5)
 
@@ -209,7 +213,8 @@ class OdooBridge:
                 self.poll_once()
             except Exception:                                # noqa: BLE001
                 self.log.exception("odoo bridge poll failed")
-            self._stop.wait(self.cfg.poll_s)
+            self._wake.wait(self.cfg.poll_s)
+            self._wake.clear()
 
     def poll_once(self) -> None:
         """One reconcile + drain cycle (the background thread calls this; tests call it directly)."""

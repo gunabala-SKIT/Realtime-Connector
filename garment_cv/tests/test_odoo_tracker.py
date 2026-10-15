@@ -153,6 +153,38 @@ class FinishingTheLastStep(unittest.TestCase):
         self.assertAlmostEqual(tr.finishing_in_s(), 35, delta=1)
 
 
+class DefaultFinishWait(unittest.TestCase):
+    """Out of the box the last operation closes 15 seconds after the work stops - idle, walking
+    away or anything else that is not cutting."""
+
+    def started_cutting(self):
+        tr = OperationTracker(STEPS)                      # default FlowConfig, not the 45 s test one
+        f = Feed(tr)
+        f.run(5, MARK).run(4, CUT).run(12, CUT)
+        self.assertEqual(tr.states, [FINISHED, ACTIVE])
+        return tr, f
+
+    def test_the_default_wait_is_fifteen_seconds(self):
+        self.assertEqual(FlowConfig().quiet_s, 15.0)
+
+    def test_finishes_within_fifteen_seconds_of_the_last_cut(self):
+        tr, f = self.started_cutting()
+        f.run(14, NONE)
+        self.assertNotIn(("FINISH", 1), f.kinds())
+        f.run(2, NONE)
+        self.assertEqual(f.kinds()[-1], ("FINISH", 1))
+
+    def test_a_short_pause_under_fifteen_seconds_still_does_not_finish(self):
+        tr, f = self.started_cutting()
+        f.run(10, NONE).run(3, CUT).run(10, NONE).run(3, CUT)      # picking up and putting down, cutting again
+        self.assertNotIn(("FINISH", 1), f.kinds())
+
+    def test_the_countdown_shown_to_the_operator_never_exceeds_fifteen_seconds(self):
+        tr, f = self.started_cutting()
+        f.run(1, NONE)
+        self.assertLessEqual(tr.finishing_in_s(), 15.0)
+
+
 class SyncWithOdoo(unittest.TestCase):
     def test_sync_adopts_odoo_state_and_resets_evidence(self):
         tr, f = make()
