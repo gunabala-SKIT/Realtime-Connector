@@ -131,7 +131,7 @@ class RealZoneMembership(unittest.TestCase):
 
     def test_index_page_shows_zone_count_and_a_link(self):
         r = self.client.get("/")
-        self.assertIn("zone(s) configured", r.text)
+        self.assertRegex(r.text, r"\d+ zones? configured")
         self.assertIn("/zones", r.text)
 
 

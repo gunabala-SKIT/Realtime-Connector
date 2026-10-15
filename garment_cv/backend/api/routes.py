@@ -44,136 +44,8 @@ from ..events.baselines import load_baselines
 from ..events.store import EventStore
 from ..workers.store import WorkerStore
 from ..zones.store import ZoneError, ZoneStore
-from .dashboard import DASHBOARD_PAGE
-
-_PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><title>Garment CV - Camera</title>
-<meta http-equiv="refresh" content="5">
-<style>
-body{{font:14px/1.5 system-ui,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:24px}}
-.wrap{{max-width:760px;margin:0 auto}}
-h1{{font-size:1.1rem;margin:0 0 4px}}
-a{{color:#4c9eff}}
-.sub{{color:#8b949e;font-size:.8rem;margin:0 0 18px}}
-.pill{{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.76rem;margin:0 6px 16px 0}}
-.ok{{background:#1a7f37;color:#fff}} .bad{{background:#cf222e;color:#fff}} .warn{{background:#9a6700;color:#fff}}
-img{{width:100%;border-radius:8px;background:#000;display:block}}
-table{{width:100%;border-collapse:collapse;margin-top:16px;font-size:.82rem}}
-td{{padding:5px 8px;border-bottom:1px solid #21262d}}
-td.k{{color:#8b949e;width:40%}}
-.note{{color:#8b949e;font-size:.76rem;line-height:1.5;margin-top:14px}}
-</style></head><body><div class="wrap">
-<h1>Garment CV — {camera_name}</h1>
-<p class="sub">{phase_note} <a href="/zones">Draw zones &rarr;</a></p>
-{pills}
-<img src="{img_src}" alt="live view">
-<table>{rows}</table>
-{detect_note}
-</div></body></html>"""
-
-_ZONES_PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><title>Garment CV - Zones</title>
-<style>
-body{{font:14px/1.5 system-ui,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:24px}}
-.wrap{{max-width:820px;margin:0 auto}} a{{color:#4c9eff}}
-h1{{font-size:1.1rem;margin:0 0 4px}} p.note{{color:#8b949e;font-size:.8rem}}
-.stage{{position:relative;background:#000;border-radius:8px;overflow:hidden;line-height:0}}
-.stage img{{width:100%;display:block}} .stage canvas{{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}}
-.row{{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}}
-input{{background:#161b22;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:7px 10px;font:inherit}}
-button{{background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:7px 12px;font:inherit;cursor:pointer}}
-button:hover{{border-color:#4c9eff}} button.primary{{background:#1f6feb;border-color:#1f6feb}}
-ul{{list-style:none;padding:0;margin-top:14px}}
-li{{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid #21262d;border-radius:6px;margin-bottom:6px}}
-li button{{padding:3px 9px;font-size:.78rem}}
-</style></head><body><div class="wrap">
-<h1>Zones — {camera_name}</h1>
-<p class="note">Click on the picture to add points (3 or more), name the zone below, then Save. Existing zones are
-outlined in orange; the one you're drawing is green. <a href="/">&larr; Back</a></p>
-<div class="stage"><img id="bg" src="/live/frame.jpg?t=0" alt="camera view"><canvas id="cv"></canvas></div>
-<div class="row">
-  <input id="name" placeholder="Zone name, e.g. Cutting Zone" style="flex:1;min-width:200px">
-  <select id="activity">
-    <option value="">No activity (just a zone)</option>
-    <option value="cutting">Cutting</option>
-    <option value="marking">Marking</option>
-    <option value="marking,cutting">Marking + Cutting (one table)</option>
-    <option value="stitching">Stitching</option>
-    <option value="piece_handling">Piece handling</option>
-  </select>
-  <button class="primary" id="save">Save zone</button>
-  <button id="undo">Undo point</button>
-  <button id="clear">Clear</button>
-  <button id="refresh">Refresh picture</button>
-</div>
-<ul id="list"></ul>
-<script>
-const CAMERA_ID = {camera_id_js};
-const img = document.getElementById('bg'), cv = document.getElementById('cv'), list = document.getElementById('list');
-let points = [], zones = [];
-
-function resize() {{ cv.width = img.clientWidth; cv.height = img.clientHeight; draw(); }}
-window.addEventListener('resize', resize);
-img.addEventListener('load', resize);
-
-function poly(ctx, pts, color, fill) {{
-  if (!pts.length) return;
-  ctx.beginPath();
-  pts.forEach(([x, y], i) => {{ const px = x * cv.width, py = y * cv.height; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }});
-  if (pts.length > 2) ctx.closePath();
-  ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
-}}
-
-function draw() {{
-  const ctx = cv.getContext('2d');
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  for (const z of zones) {{
-    poly(ctx, z.points, '#f0883e', 'rgba(240,136,62,.15)');
-    if (z.points.length) {{ ctx.fillStyle = '#f0883e'; ctx.font = '12px sans-serif';
-      ctx.fillText(z.name, z.points[0][0] * cv.width + 4, z.points[0][1] * cv.height - 6); }}
-  }}
-  poly(ctx, points, '#3fb950', 'rgba(63,185,80,.25)');
-  ctx.fillStyle = '#3fb950';
-  for (const [x, y] of points) {{ ctx.beginPath(); ctx.arc(x * cv.width, y * cv.height, 4, 0, 7); ctx.fill(); }}
-}}
-
-cv.addEventListener('click', (e) => {{
-  const r = cv.getBoundingClientRect();
-  points.push([+((e.clientX - r.left) / r.width).toFixed(4), +((e.clientY - r.top) / r.height).toFixed(4)]);
-  draw();
-}});
-document.getElementById('undo').onclick = () => {{ points.pop(); draw(); }};
-document.getElementById('clear').onclick = () => {{ points = []; draw(); }};
-document.getElementById('refresh').onclick = () => {{ img.src = '/live/frame.jpg?t=' + Date.now(); }};
-
-async function loadZones() {{
-  const r = await fetch('/api/zones?camera_id=' + encodeURIComponent(CAMERA_ID));
-  zones = await r.json();
-  list.innerHTML = zones.map(z => `<li><span>${{z.name}} (${{z.points.length}} points)${{z.activity ? ' &mdash; ' + z.activity : ''}}</span>
-    <button data-id="${{z.id}}">Delete</button></li>`).join('') || '<li><span style="color:#8b949e">No zones yet.</span></li>';
-  draw();
-}}
-list.addEventListener('click', async (e) => {{
-  const id = e.target.dataset.id;
-  if (!id) return;
-  await fetch('/api/zones/' + id, {{ method: 'DELETE' }});
-  loadZones();
-}});
-document.getElementById('save').onclick = async () => {{
-  const name = document.getElementById('name').value.trim();
-  if (!name) return alert('Give the zone a name.');
-  if (points.length < 3) return alert('Click at least 3 points first.');
-  const activity = document.getElementById('activity').value || null;
-  const res = await fetch('/api/zones', {{ method: 'POST', headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{ camera_id: CAMERA_ID, name, points, activity }}) }});
-  if (!res.ok) {{ const b = await res.json().catch(() => ({{}})); return alert('Could not save: ' + (b.detail || res.status)); }}
-  points = []; document.getElementById('name').value = ''; document.getElementById('activity').value = '';
-  loadZones();
-}};
-resize(); loadZones();
-</script>
-</div></body></html>"""
-
+from .dashboard import render_dashboard
+from .pages import render_status, render_zones
 
 class _JpegSource(Protocol):
     def latest_jpeg(self) -> bytes | None: ...
@@ -274,38 +146,55 @@ def create_app(runner: CameraRunner, detector: ObjectDetector | None = None, zon
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         st = runner.status()
-        pills = [f"<span class='pill {'ok' if st['connected'] else 'bad'}'>"
-                f"{'connected' if st['connected'] else 'not connected'}</span>"]
-        note = "Phase 1: camera module only. No detection, zones or activity logic yet."
-        img_src, detect_note = "/live.mjpg", ""
-        if detector is not None:
-            note = "Phase 1-5: camera, object detection (COCO stand-in), tracking, zones and activity detection."
-        if event_store is not None:
-            note = ("Phase 1-7: camera, object detection (COCO stand-in), tracking, zones, activity "
-                    "detection, production events + database, and the <a href='/dashboard'>dashboard</a>.")
+        checks: list[tuple[str, str, str]] = [
+            ("ok" if st["connected"] else "bad", "Camera",
+             "The camera is connected and sending video." if st["connected"]
+             else "The camera is not connected." + (f" {st['last_error']}" if st.get("last_error") else ""))]
+        img_src, feed_note = "/live.mjpg", "Detection is not running, so this is the plain camera picture."
         if detector is not None:
             if detector.enabled:
                 dst = detector.status()
-                pills.append(f"<span class='pill ok'>detection on ({dst['device']})</span>")
-                if dst["tracking_enabled"]:
-                    pills.append(f"<span class='pill ok'>tracking on ({dst['tracker']})</span>")
                 img_src = "/live/annotated.mjpg"
+                feed_note = "Detected people and objects are outlined on the picture."
+                looking = ", ".join(dst["detected_classes"]) or "nothing yet"
+                where = {"0": "graphics card", "cpu": "processor"}.get(str(dst["device"]), f"device {dst['device']}")
+                detail = f"Detection is on, running on the {where}. Looking for: {looking}."
+                if dst["not_yet_detectable"]:
+                    detail += f" Not detectable yet: {', '.join(dst['not_yet_detectable'])}."
+                checks.append(("ok", "Object detection", detail))
+                if dst["tracking_enabled"]:
+                    checks.append(("ok", "Tracking", f"People and objects are followed from frame to frame ({str(dst['tracker']).removesuffix('.yaml')})."))
                 n_zones = len(zone_store.list_zones(runner.cfg.camera_id)) if zone_store else 0
-                pills.append(f"<span class='pill {'ok' if n_zones else 'warn'}'>{n_zones} zone(s) configured</span>")
-                detect_note = (f"<p class='note'>Detecting: {', '.join(dst['detected_classes'])}. "
-                              f"Not yet detectable (no COCO match - needs real training data): "
-                              f"{', '.join(dst['not_yet_detectable'])}.</p>")
+                checks.append(("ok" if n_zones else "warn", "Zones",
+                               (f"{n_zones} zone{'s' if n_zones != 1 else ''} configured. " if n_zones else "No zones configured yet. ")
+                               + "Zones tell the system where each kind of work happens."))
                 if activity_engine is not None and activity_engine.cfg.enabled:
                     ast = activity_engine.status()
-                    pills.append(f"<span class='pill ok'>activity detection on</span>")
-                    detect_note += (f"<p class='note'>Activity rules reachable now (given the COCO stand-in): "
-                                   f"{', '.join(ast['reachable_now'])}. Dormant (real, tested, but no COCO class "
-                                   f"exists yet for them): {', '.join(ast['dormant'])}.</p>")
+                    checks.append(("ok", "Activity recognition", "On. Can recognise: " + ", ".join(a.replace("_", " ").lower() for a in ast["reachable_now"]) + "."))
             else:
-                pills.append(f"<span class='pill warn'>detection off — {detector.disabled_reason}</span>")
-        rows = "".join(f"<tr><td class='k'>{k}</td><td>{v}</td></tr>" for k, v in st.items())
-        return _PAGE.format(camera_name=st["camera_name"], phase_note=note, pills="".join(pills),
-                            img_src=img_src, rows=rows, detect_note=detect_note)
+                checks.append(("warn", "Object detection", f"Detection is off: {detector.disabled_reason}"))
+        if odoo_bridge is not None:
+            ost = odoo_bridge.status()
+            if not ost["configured"]:
+                checks.append(("warn", "Odoo", "Not set up yet. Add the Odoo address, database, API key and work center in the settings file."))
+            elif ost["odoo_ok"] is False:
+                checks.append(("bad", "Odoo", f"Cannot reach Odoo. Updates wait in the queue. Mode: {ost['mode']}."))
+            else:
+                checks.append(("ok" if ost["mode"] != "off" else "warn", "Odoo",
+                               f"Connected. Mode: {ost['mode']}. Work center: {ost['workcenter_code']}."))
+        up = int(st.get("stream_uptime_s") or 0)
+        rows = [("connected", "Connection", "Connected" if st["connected"] else "Not connected"),
+                ("resolution", "Picture size", str(st.get("resolution") or "-")),
+                ("actual_fps", "Frames per second", f"{st['actual_fps']:.1f} per second" if st.get("actual_fps") is not None else "-"),
+                ("frames_received", "Frames received", str(st["frames_received"])),
+                ("frames_failed", "Frames failed", str(st["frames_failed"])),
+                ("reconnections", "Reconnections", str(st["reconnections"])),
+                ("stream_uptime_s", "Connected for", f"{up // 3600} h {up % 3600 // 60} min" if up >= 3600 else f"{up // 60} min {up % 60} s"),
+                ("last_error", "Last error", str(st.get("last_error") or "None")),
+                ("camera_id", "Camera ID", str(st["camera_id"])),
+                ("source", "Source", str(st["source"]))]
+        return render_status(camera_name=st["camera_name"], checks=checks, img_src=img_src, feed_note=feed_note,
+                             rows=rows, dashboard=event_store is not None and activity_engine is not None)
 
     @app.get("/api/status")
     def status() -> dict:
@@ -339,12 +228,10 @@ def create_app(runner: CameraRunner, detector: ObjectDetector | None = None, zon
             return StreamingResponse(mjpeg_chunks(detector), media_type="multipart/x-mixed-replace; boundary=frame")
 
     if zone_store is not None:
-        import json as _json
-
         @app.get("/zones", response_class=HTMLResponse)
         def zones_page() -> str:
-            return _ZONES_PAGE.format(camera_name=runner.cfg.camera_name,
-                                      camera_id_js=_json.dumps(runner.cfg.camera_id))
+            return render_zones(camera_name=runner.cfg.camera_name, camera_id=runner.cfg.camera_id,
+                                dashboard=event_store is not None and activity_engine is not None)
 
         @app.get("/api/zones")
         def list_zones(camera_id: str | None = None) -> list[dict]:
@@ -450,11 +337,8 @@ def create_app(runner: CameraRunner, detector: ObjectDetector | None = None, zon
             return {"ok": True}
 
     if event_store is not None and activity_engine is not None:
-        import json as _json
-
         @app.get("/dashboard", response_class=HTMLResponse)
         def dashboard_page() -> str:
-            return DASHBOARD_PAGE.format(camera_name=runner.cfg.camera_name,
-                                         camera_id_js=_json.dumps(runner.cfg.camera_id))
+            return render_dashboard(camera_name=runner.cfg.camera_name, camera_id=runner.cfg.camera_id)
 
     return app

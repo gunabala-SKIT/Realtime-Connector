@@ -150,8 +150,8 @@ class DashboardPage(unittest.TestCase):
         with TestClient(app) as c:
             r = c.get("/dashboard")
             self.assertEqual(r.status_code, 200)
-            self.assertIn("Production Timeline", r.text)
-            self.assertIn("Live Monitoring", r.text)
+            self.assertIn("Production timeline", r.text)
+            self.assertIn("Live monitoring", r.text)
 
     def test_no_dashboard_route_without_event_store(self):
         runner = CameraRunner(cam_cfg("D:/nope.mp4"), log)

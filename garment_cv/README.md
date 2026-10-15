@@ -515,6 +515,25 @@ tab **Odoo**, endpoints `/api/odoo/*`. Starts in `off` mode; set it up and roll 
 using **[docs/ODOO_RUNBOOK.md](docs/ODOO_RUNBOOK.md)**. Verified against a real Odoo 19 test database
 and a fake-Odoo test suite (`tests/test_odoo_*.py`); not yet verified against live camera footage.
 
+## Dashboard design
+
+All three pages (dashboard, system status, zone editor) share one small design system in
+`backend/api/ui.py`: a warm light canvas, flat white cards with a 1px border, near-black actions,
+colour kept for meaning (muted pastel status badges), tabular numbers, visible focus rings and
+reduced-motion support. Decisions that matter on a shop floor:
+
+- **System fonts only, no web fonts and nothing loaded from the internet** - the factory network may
+  be offline. A test fails if a page references an external resource.
+- **No browser pop-ups.** Anything that changes Odoo or deletes something asks for a second press on
+  the same button (it turns amber and expires after four seconds); results appear as small toasts.
+- **Readable at a distance and for everyone:** secondary text meets WCAG AA contrast (5.0:1 on the
+  canvas), tabs follow the ARIA tab pattern with arrow-key navigation, every control has a label.
+- **Only the visible tab is refreshed**, and nothing polls while the browser tab is hidden.
+- Works from 375 px phones to wide screens (no horizontal overflow on any tab).
+
+The pages are plain templates with `__TOKEN__` placeholders (`ui.fill`), so CSS and JavaScript are
+written with ordinary braces; every value from configuration or the camera is escaped.
+
 ## What comes next (beyond the MVP)
 
 All seven of the spec's own phases (section 21) are built. What's left isn't a skipped MVP step —

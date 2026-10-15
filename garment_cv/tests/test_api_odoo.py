@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from garment_cv.backend.activities.config import ActivityConfig
 from garment_cv.backend.activities.engine import ActivityEngine
-from garment_cv.backend.api.dashboard import DASHBOARD_PAGE
+from garment_cv.backend.api.dashboard import render_dashboard
 from garment_cv.backend.api.routes import create_app
 from garment_cv.backend.cameras.runner import CameraRunner
 from garment_cv.backend.database.db import Database
@@ -74,8 +74,12 @@ class OdooApi(unittest.TestCase):
         self.assertIn('data-view="odoo"', html)
         self.assertIn("/api/odoo/status", html)
 
-    def test_dashboard_template_formats(self):
-        DASHBOARD_PAGE.format(camera_name="x", camera_id_js='"x"')
+    def test_dashboard_fills_every_placeholder_and_escapes_the_camera_name(self):
+        page = render_dashboard(camera_name='<b>"Cam" & </script>', camera_id="a</script><script>x")
+        self.assertNotRegex(page, r"__[A-Z][A-Z0-9_]*__")                # no unfilled placeholder
+        self.assertNotIn("<b>", page)                                      # name is HTML-escaped
+        self.assertNotIn("a</script><script>x", page)                      # id cannot close the script element
+        self.assertIn("&lt;b&gt;", page)
 
 
 if __name__ == "__main__":

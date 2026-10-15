@@ -107,7 +107,7 @@ class WithDetection(unittest.TestCase):
     def test_index_page_mentions_detection_and_the_not_yet_detectable_classes(self):
         r = self.client.get("/")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("detection on", r.text)
+        self.assertIn("Detection is on", r.text)
         self.assertIn("sewing_machine", r.text)
         self.assertIn("/live/annotated.mjpg", r.text)
 
@@ -120,7 +120,8 @@ class WithoutDetector(unittest.TestCase):
             self.assertEqual(client.get("/api/detections").status_code, 404)
             self.assertEqual(client.get("/live/annotated.mjpg").status_code, 404)
             r = client.get("/")
-            self.assertIn("Phase 1: camera module only", r.text)
+            self.assertIn("plain camera picture", r.text)
+            self.assertNotIn("/live/annotated.mjpg", r.text)
 
 
 class DetectionDisabledByConfig(unittest.TestCase):
