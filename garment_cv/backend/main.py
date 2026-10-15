@@ -26,6 +26,8 @@ from .detection.config import DetectionConfig
 from .detection.detector import ObjectDetector
 from .events.store import EventStore
 from .logger import get_logger
+from .odoo_bridge.bridge import OdooBridge
+from .odoo_bridge.config import BridgeConfig
 from .tracking.config import TrackingConfig
 from .workers.store import WorkerStore
 from .zones.config import zones_file_path
@@ -59,12 +61,17 @@ def build(settings: AppSettings | None = None, start_camera: bool = True) -> tup
     db = Database(db_file_path())
     event_store = EventStore(db)
     worker_store = WorkerStore(db)
+    # Odoo work-order bridge: always constructed (mode `off` unless configured) so the dashboard can show
+    # its state; it only ever receives the engine's per-update tick and never touches detection itself.
+    odoo_bridge = OdooBridge(BridgeConfig.load(camera_id=cam_cfg.camera_id), db, log)
     activity_engine = ActivityEngine(ActivityConfig.load(),
-                                     on_complete=lambda c: _record_completed_activity(event_store, worker_store, c))
+                                     on_complete=lambda c: _record_completed_activity(event_store, worker_store, c),
+                                     on_tick=odoo_bridge.on_tick)
     detector = ObjectDetector(DetectionConfig.load(), log, tracking=TrackingConfig.load(),
                               zones=ZoneResolver(zone_store), activities=activity_engine)
     app = create_app(runner, detector=detector, zone_store=zone_store, start_camera=start_camera,
-                     activity_engine=activity_engine, event_store=event_store, worker_store=worker_store)
+                     activity_engine=activity_engine, event_store=event_store, worker_store=worker_store,
+                     odoo_bridge=odoo_bridge)
     return app, runner, detector, zone_store, activity_engine, event_store, worker_store
 
 

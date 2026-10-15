@@ -505,6 +505,16 @@ and a new `custom_model` field in `/api/status` says which mode is actually acti
 
 Full disclosure and how to run it: [`training/README.md`](training/README.md).
 
+## Odoo Manufacturing integration
+
+The camera can drive Odoo 19 work orders: Marking detected starts operation 1, confirmed cutting hands
+off to operation 2, and finished cutting closes operation 2 and the MO - with finish rules that a
+picked-up pair of scissors or a short pause cannot trigger. Code: `backend/odoo_bridge/`
+(`tracker.py` finish rules, `client.py` Odoo JSON-2 API, `bridge.py` queue/reconcile/modes), dashboard
+tab **Odoo**, endpoints `/api/odoo/*`. Starts in `off` mode; set it up and roll it out via shadow mode
+using **[docs/ODOO_RUNBOOK.md](docs/ODOO_RUNBOOK.md)**. Verified against a real Odoo 19 test database
+and a fake-Odoo test suite (`tests/test_odoo_*.py`); not yet verified against live camera footage.
+
 ## What comes next (beyond the MVP)
 
 All seven of the spec's own phases (section 21) are built. What's left isn't a skipped MVP step —

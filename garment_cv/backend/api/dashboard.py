@@ -66,6 +66,7 @@ select,.filt-input{{background:#161b22;border:1px solid #30363d;color:#e6edf3;bo
   <div class="tab" data-view="timeline">Production Timeline</div>
   <div class="tab" data-view="history">Activity History</div>
   <div class="tab" data-view="analytics">Analytics</div>
+  <div class="tab" data-view="odoo">Odoo</div>
 </div>
 
 <div id="view-live" class="view active">
@@ -122,6 +123,29 @@ select,.filt-input{{background:#161b22;border:1px solid #30363d;color:#e6edf3;bo
     <thead><tr><th>Worker</th><th>Active time</th><th>Idle time</th></tr></thead>
     <tbody></tbody>
   </table>
+</div>
+
+<div id="view-odoo" class="view">
+  <div class="cards" id="od-cards"></div>
+  <div id="od-alert"></div>
+  <div class="row">
+    <div class="panel"><h3>Operations</h3><div id="od-steps"><p class="empty">Not armed on a manufacturing order.</p></div>
+      <div id="od-finish" class="empty"></div>
+      <div class="assign" style="flex-wrap:wrap;margin-top:10px">
+        <button id="od-hold">Hold auto-finish</button>
+        <button id="od-retry">Retry failed</button>
+        <button id="od-discard">Discard failed</button>
+      </div></div>
+    <div class="panel"><h3>Control</h3>
+      <p class="empty" style="padding:0 0 8px">Mode: <b>off</b> does nothing, <b>shadow</b> only records what it would do, <b>live</b> updates Odoo.</p>
+      <div class="assign" style="flex-wrap:wrap">
+        <button data-mode="off">Off (kill switch)</button><button data-mode="shadow">Shadow</button><button data-mode="live">Live</button>
+      </div>
+      <h3 style="margin-top:14px">Manual override</h3>
+      <div class="assign" style="flex-wrap:wrap" id="od-manual"></div></div>
+  </div>
+  <h3 style="margin:18px 0 6px;color:#8b949e;font-size:.88rem">Audit log</h3>
+  <table id="od-audit"><thead><tr><th>Time</th><th>Kind</th><th>Detail</th></tr></thead><tbody></tbody></table>
 </div>
 
 <script>
@@ -363,11 +387,65 @@ async function refreshAnalytics() {{
     : '<tr><td colspan="3" class="empty">No completed activities recorded yet.</td></tr>';
 }}
 
+// ---------------------------------------------------------------- odoo
+function esc(v) {{ return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c])); }}
+async function odooPost(path, body) {{
+  const r = await fetch(path, {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(body || {{}})}});
+  if (!r.ok) {{ let m = ''; try {{ m = (await r.json()).detail; }} catch (e) {{}} alert('Not done: ' + (m || r.status)); }}
+  refreshOdoo();
+}}
+async function refreshOdoo() {{
+  let st, audit;
+  try {{
+    st = await (await fetch('/api/odoo/status')).json();
+    audit = await (await fetch('/api/odoo/audit')).json();
+  }} catch (e) {{ return; }}
+  document.getElementById('od-cards').innerHTML = [
+    ['Mode', st.mode], ['Odoo', st.odoo_ok === null ? '-' : (st.odoo_ok ? 'connected' : 'unreachable')],
+    ['Work center', st.workcenter_code || '-'], ['Order', st.production ? st.production.name : 'none armed'],
+    ['Queued', (st.queue.pending || 0)], ['Failed', (st.queue.failed || 0)],
+  ].map(([k, v]) => `<div class="card"><div class="v" style="font-size:1.05rem">${{esc(v)}}</div><div class="k">${{k}}</div></div>`).join('');
+  const notes = [];
+  if (!st.configured) notes.push('Odoo is not configured (GARMENT_ODOO_URL / DB / API_KEY / WORKCENTER).');
+  if (st.conflict) notes.push(st.conflict);
+  if (st.last_error) notes.push('Odoo: ' + st.last_error);
+  (st.failed || []).forEach(f => notes.push(`${{f.action}} ${{f.step_name || ''}} was rejected by Odoo: ${{f.last_error}}`));
+  if (st.flow && st.flow.unexpected) notes.push(st.flow.unexpected);
+  document.getElementById('od-alert').innerHTML = notes.map(n => `<div class="track" style="border-color:#9e6a03">${{esc(n)}}</div>`).join('');
+  const steps = st.flow ? st.flow.steps : [];
+  document.getElementById('od-steps').innerHTML = steps.length ? steps.map((s, i) =>
+    `<div class="track"><div class="t1"><span>${{i + 1}}. ${{esc(s.name)}}</span>
+      <span class="pill ${{s.state === 'finished' ? 'pill-ok' : (s.state === 'active' ? 'pill-warn' : '')}}">${{esc(s.state)}}</span></div>
+      <div style="color:#8b949e">detected by ${{esc(s.activity)}}</div></div>`).join('')
+    : '<p class="empty">Not armed on a manufacturing order. Start an MO in Odoo whose operations use this camera work center.</p>';
+  const fin = st.flow && st.flow.finishing_in_s != null ? `Finishing the last operation in ${{Math.ceil(st.flow.finishing_in_s)}}s unless cutting resumes.` : '';
+  document.getElementById('od-finish').textContent = fin || (st.flow && st.flow.held ? 'Auto-finish is on hold.' : '');
+  document.getElementById('od-hold').textContent = st.flow && st.flow.held ? 'Release hold' : 'Hold auto-finish';
+  document.getElementById('od-hold').dataset.on = st.flow && st.flow.held ? '0' : '1';
+  document.getElementById('od-manual').innerHTML = steps.map((s, i) =>
+    `<button data-act="start" data-step="${{i}}">Start ${{esc(s.name)}}</button><button data-act="finish" data-step="${{i}}">Finish ${{esc(s.name)}}</button>`).join('');
+  document.querySelector('#od-audit tbody').innerHTML = audit.length ? audit.map(a =>
+    `<tr><td>${{fmtTime(a.ts)}}</td><td>${{esc(a.kind)}}${{a.shadow ? ' (shadow)' : ''}}</td><td>${{esc(a.detail)}}</td></tr>`).join('')
+    : '<tr><td colspan="3" class="empty">Nothing recorded yet.</td></tr>';
+}}
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {{
+  if (b.dataset.mode === 'live' && !confirm('Switch to LIVE? The camera will start/finish work orders in Odoo.')) return;
+  odooPost('/api/odoo/mode', {{mode: b.dataset.mode}});
+}});
+document.getElementById('od-hold').onclick = e => odooPost('/api/odoo/hold', {{on: e.target.dataset.on === '1'}});
+document.getElementById('od-retry').onclick = () => odooPost('/api/odoo/retry');
+document.getElementById('od-discard').onclick = () => confirm('Discard the failed actions? Odoo will not be updated for them.') && odooPost('/api/odoo/discard');
+document.getElementById('od-manual').onclick = e => {{
+  const b = e.target.closest('button'); if (!b) return;
+  if (confirm(`${{b.dataset.act}} this operation in Odoo now?`)) odooPost('/api/odoo/manual', {{action: b.dataset.act, step: +b.dataset.step}});
+}};
+
 // ---------------------------------------------------------------- polling
 resizeCanvas();
 refreshSourceSize(); refreshZones(); refreshWorkers(); refreshLive();
-refreshTimeline(); refreshHistory(); refreshAnalytics();
+refreshTimeline(); refreshHistory(); refreshAnalytics(); refreshOdoo();
 setInterval(refreshLive, 700);
+setInterval(refreshOdoo, 2000);
 setInterval(() => {{ refreshZones(); refreshWorkers(); refreshSourceSize(); }}, 5000);
 setInterval(refreshTimeline, 8000);
 setInterval(refreshHistory, 8000);

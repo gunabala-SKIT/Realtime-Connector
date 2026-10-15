@@ -97,6 +97,7 @@ outlined in orange; the one you're drawing is green. <a href="/">&larr; Back</a>
     <option value="">No activity (just a zone)</option>
     <option value="cutting">Cutting</option>
     <option value="marking">Marking</option>
+    <option value="marking,cutting">Marking + Cutting (one table)</option>
     <option value="stitching">Stitching</option>
     <option value="piece_handling">Piece handling</option>
   </select>
@@ -225,9 +226,23 @@ class WorkerAssign(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
 
 
+class _ModeBody(BaseModel):
+    mode: str
+
+
+class _HoldBody(BaseModel):
+    on: bool
+
+
+class _ManualBody(BaseModel):
+    action: str
+    step: int
+
+
 def create_app(runner: CameraRunner, detector: ObjectDetector | None = None, zone_store: ZoneStore | None = None,
               start_camera: bool = True, activity_engine: ActivityEngine | None = None,
-              event_store: EventStore | None = None, worker_store: WorkerStore | None = None) -> FastAPI:
+              event_store: EventStore | None = None, worker_store: WorkerStore | None = None,
+              odoo_bridge=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         if detector is not None:
@@ -236,7 +251,11 @@ def create_app(runner: CameraRunner, detector: ObjectDetector | None = None, zon
                 runner.frame_hooks.append(detector.observe)
         if start_camera and runner.cfg.source:
             runner.start()  # runs in the background regardless of whether it connects on the first try
+        if odoo_bridge is not None:
+            odoo_bridge.start()
         yield
+        if odoo_bridge is not None:
+            odoo_bridge.stop()
         runner.stop()
 
     app = FastAPI(title="Garment Manufacturing CV", lifespan=lifespan)
@@ -246,6 +265,7 @@ def create_app(runner: CameraRunner, detector: ObjectDetector | None = None, zon
     app.state.activity_engine = activity_engine
     app.state.event_store = event_store
     app.state.worker_store = worker_store
+    app.state.odoo_bridge = odoo_bridge
 
     @app.exception_handler(ZoneError)
     async def _zone_error(_request, e: ZoneError):
@@ -343,6 +363,44 @@ def create_app(runner: CameraRunner, detector: ObjectDetector | None = None, zon
         def delete_zone(zone_id: int) -> dict:
             zone_store.delete_zone(zone_id)
             return {"ok": True}
+
+    if odoo_bridge is not None:
+        @app.get("/api/odoo/status")
+        def odoo_status() -> dict:
+            return odoo_bridge.status()
+
+        @app.get("/api/odoo/audit")
+        def odoo_audit(limit: int = 50) -> list[dict]:
+            return odoo_bridge.audit_log(min(max(limit, 1), 500))
+
+        @app.post("/api/odoo/mode")
+        def odoo_mode(body: _ModeBody) -> dict:
+            try:
+                odoo_bridge.set_mode(body.mode)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            return odoo_bridge.status()
+
+        @app.post("/api/odoo/hold")
+        def odoo_hold(body: _HoldBody) -> dict:
+            odoo_bridge.hold(body.on)
+            return odoo_bridge.status()
+
+        @app.post("/api/odoo/manual")
+        def odoo_manual(body: _ManualBody) -> dict:
+            try:
+                odoo_bridge.manual(body.action, body.step)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            return odoo_bridge.status()
+
+        @app.post("/api/odoo/retry")
+        def odoo_retry() -> dict:
+            return {"requeued": odoo_bridge.retry_failed()}
+
+        @app.post("/api/odoo/discard")
+        def odoo_discard() -> dict:
+            return {"discarded": odoo_bridge.discard_failed()}
 
     if activity_engine is not None:
         @app.get("/api/activities")

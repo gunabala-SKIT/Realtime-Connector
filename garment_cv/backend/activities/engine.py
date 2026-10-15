@@ -85,7 +85,8 @@ def _gap(a, b) -> float:
 
 
 class ActivityEngine:
-    def __init__(self, cfg: ActivityConfig, on_complete: Callable[[CompletedActivity], None] | None = None) -> None:
+    def __init__(self, cfg: ActivityConfig, on_complete: Callable[[CompletedActivity], None] | None = None,
+                 on_tick: Callable[[str, float, frozenset], None] | None = None) -> None:
         self.cfg = cfg
         self._tracks: dict[int, _TrackState] = {}
         self._history: deque[CompletedActivity] = deque(maxlen=max(1, cfg.max_history))
@@ -98,6 +99,11 @@ class ActivityEngine:
         # docstring on `frame_hooks`). `ActivityEngine` never imports `events/` or `database/`
         # itself - the same decoupling already used for `_ZoneLookup`/`_ActivityLookup` above.
         self._on_complete = on_complete
+        # Called after every update with (camera_id, ts, the set of activities currently confirmed for
+        # anyone in view). Unlike `on_complete` - which fires once per finished activity, per person
+        # track - this is the continuous signal the Odoo work-order bridge needs, and it doesn't depend
+        # on person track ids (which can flicker or be re-assigned mid-job).
+        self._on_tick = on_tick
         # The class names the loaded detection model can actually produce, once the detector says
         # (see `configure`). None means "not told" - treated as the COCO stand-in, which cannot see
         # cloth, so rules that want cloth contact skip that requirement rather than never firing.
@@ -147,6 +153,8 @@ class ActivityEngine:
         if self._on_complete is not None:
             for c in completed:
                 self._on_complete(c)
+        if self._on_tick is not None:
+            self._on_tick(camera_id, ts, frozenset(a for a in current.values() if a and a != IDLE))
         return current
 
     def _evaluate_person(self, st: _TrackState, p: _DetectionLike, others: list[_DetectionLike],
@@ -155,7 +163,7 @@ class ActivityEngine:
         matched = None
         for rule in RULES:
             ok, obj = False, None
-            if p.zone_activity == rule.zone_activity:
+            if rule.zone_activity in (p.zone_activity or "").split(","):
                 candidates = [d for d in others if d.cls in rule.required_classes]
                 obj = _attribute(p.box, candidates, self.cfg.attribution_margin)
                 if (obj is not None and rule.contact_classes and self.cfg.require_cloth_contact
