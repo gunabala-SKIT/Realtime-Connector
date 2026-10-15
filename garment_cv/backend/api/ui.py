@@ -184,6 +184,7 @@ main { margin-top: 28px; }
 .banner.warn { background: var(--yellow-bg); color: var(--yellow-fg); }
 .banner.bad { background: var(--red-bg); color: var(--red-fg); }
 .banner.info { background: var(--blue-bg); color: var(--blue-fg); }
+.banner.ok { background: var(--green-bg); color: var(--green-fg); }
 .banner .dot { margin-top: 7px; background: currentColor; }
 .skel { background: var(--sunken); border-radius: 6px; height: 14px; animation: pulse 1.4s ease-in-out infinite; }
 .skel + .skel { margin-top: 12px; }

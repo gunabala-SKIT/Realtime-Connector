@@ -19,8 +19,10 @@ sustained evidence:
                   - the NEXT step's activity has been continuously confirmed for `handoff_hold_s`.
                     Putting the pen down, or touching scissors without cutting, confirms nothing.
 * FINISH the last step
-                  - at least `min_active_s` of its activity was seen, AND then `quiet_s` of healthy
-                    camera time passed without it. Quiet time only accrues on frames that actually
+                  - the work was really seen (`min_active_s`; the sustained activity that started the
+                    step already counts), AND then `quiet_s` (15 s) of healthy camera time passed
+                    without it - the worker idle, walking out of the zone or out of view, anything
+                    that is not the work itself. Quiet time only accrues on frames that actually
                     arrived (a camera outage pauses the clock instead of looking like "quiet"), and
                     seeing the activity again cancels the countdown - the same work order continues.
 
@@ -38,7 +40,9 @@ PENDING, ACTIVE, FINISHED = "pending", "active", "finished"
 class FlowConfig:
     start_hold_s: float = 2.0        # activity must stay confirmed this long before a step starts
     handoff_hold_s: float = 3.0      # next step's activity must stay confirmed this long to hand off
-    min_active_s: float = 10.0       # last step: minimum cumulative activity before it may finish
+    min_active_s: float = 3.0        # last step: cumulative activity that proves real work happened before it may
+                                     # finish (the evidence that started the step counts). It only guards a step started
+                                     # by hand in Odoo that the camera has never seen any work on
     quiet_s: float = 15.0            # last step: healthy no-activity time before it finishes - the worker
                                      # idle, walking away or otherwise not cutting for this long ends the job
     hold_grace_s: float = 3.0        # a hold survives the activity dropping out for this long
@@ -129,7 +133,7 @@ class OperationTracker:
                 held = self._held_for(self.steps[k].activity, ts)
                 if held >= self.cfg.start_hold_s:
                     decisions.append(self._start(k, ts, f"{self.steps[k].activity} confirmed for {held:.1f}s",
-                                                 {"held_s": round(held, 1)}))
+                                                 {"held_s": round(held, 1)}, seen_s=held))
             self._note_unexpected(activities, expected={self.steps[k].activity} if k is not None else set())
             return decisions
 
@@ -140,7 +144,7 @@ class OperationTracker:
             if held >= self.cfg.handoff_hold_s:
                 decisions.append(self._finish(cur, ts, f"{nxt.activity} confirmed for {held:.1f}s - hand-off",
                                               {"held_s": round(held, 1)}))
-                decisions.append(self._start(cur + 1, ts, f"hand-off from {self.steps[cur].name}", {}))
+                decisions.append(self._start(cur + 1, ts, f"hand-off from {self.steps[cur].name}", {}, seen_s=held))
             self._note_unexpected(activities, expected={self.steps[cur].activity, nxt.activity})
             return decisions
 
@@ -163,9 +167,9 @@ class OperationTracker:
         stray = sorted((activities & known) - expected)
         self.unexpected = f"{', '.join(stray)} seen out of order - no change made" if stray else None
 
-    def _start(self, k: int, ts: float, reason: str, evidence: dict) -> Decision:
+    def _start(self, k: int, ts: float, reason: str, evidence: dict, seen_s: float = 0.0) -> Decision:
         self.states[k] = ACTIVE
-        self._active_total = 0.0
+        self._active_total = seen_s              # the activity that triggered the start was real work too
         self._quiet = 0.0
         return Decision("START", k, ts, reason, evidence)
 
@@ -217,6 +221,7 @@ class OperationTracker:
             "held_s": {s.activity: round(self._held_for(s.activity, self._last_ts), 1) if self._last_ts else 0.0
                        for s in self.steps},
             "start_hold_s": self.cfg.start_hold_s, "handoff_hold_s": self.cfg.handoff_hold_s,
+            "finish_wait_s": self.cfg.quiet_s,
         }
 
     def snapshot(self) -> dict:

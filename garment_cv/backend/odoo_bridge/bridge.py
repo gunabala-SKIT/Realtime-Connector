@@ -81,6 +81,7 @@ class OdooBridge:
         self.production_id: int | None = None
         self.production_name: str | None = None
         self._wo_ids: list[int] = []
+        self.last_completed: dict | None = None      # the most recent order that finished, for the dashboard
         self.ticks = 0                               # engine updates received (live diagnostics)
         self.last_tick_wall = 0.0
         self.last_acts: list[str] = []
@@ -266,6 +267,7 @@ class OdooBridge:
             if not armed:
                 if self.tracker is not None and not self._pending_for(self.production_id):
                     self._audit("reconcile", "MO no longer active at this work center - disarmed", self.production_id)
+                    self._remember_completed()
                     self.tracker, self.production_id = None, None
                 return
             (mo_id, ws), = armed.items()
@@ -286,6 +288,17 @@ class OdooBridge:
                     if self.tracker.sync_states(states):
                         self._audit("reconcile", f"adopted Odoo states {states}", mo_id)
                 self._odoo_seen = states
+
+    def _remember_completed(self) -> None:
+        """Keep what just finished so the dashboard can show it as completed instead of snapping straight back
+        to "no order". `by_camera` tells apart an order the camera closed from one someone closed in Odoo."""
+        t = self.tracker
+        if t is None or not all(st == FINISHED for st in t.states):
+            return                                           # cancelled or abandoned, not completed
+        by_camera = bool(self.db.query("SELECT 1 FROM odoo_outbox WHERE production_id=? AND action='MO_DONE' AND status='done' LIMIT 1",
+                                       (self.production_id,)))
+        self.last_completed = {"name": self.production_name, "ts": self._clock(), "by_camera": by_camera,
+                               "steps": [{"name": x.name, "activity": x.activity} for x in t.steps]}
 
     def _arm(self, mo_id: int, mo_name: str, work_orders: list[dict]) -> None:
         real = [w for w in work_orders if w["state"] != "cancel"]
@@ -369,6 +382,7 @@ class OdooBridge:
                 "mode": self.mode, "configured": self.cfg.configured, "workcenter_code": self.cfg.workcenter_code,
                 "odoo_ok": self.odoo_ok, "last_error": self.last_error, "last_poll": self.last_poll or None,
                 "conflict": self.conflict,
+                "last_completed": self.last_completed,
                 "camera": {"ticks": self.ticks, "last_tick_age_s": round(self._clock() - self.last_tick_wall, 1) if self.ticks else None,
                            "seeing": self.last_acts},
                 "production": {"id": self.production_id, "name": self.production_name} if self.production_id else None,

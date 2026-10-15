@@ -46,6 +46,9 @@ _PAGE_CSS = r"""
 .step p { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
 .step .meter { margin-top: 18px; }
 .step .note { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 20px; }
+.count { display: flex; align-items: baseline; gap: 10px; margin-top: 14px; }
+.count-num { font-size: 44px; font-weight: 600; letter-spacing: -.035em; color: var(--ink); line-height: 1; }
+.count-label { color: var(--text); font-size: 14.5px; }
 .step.is-active { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
 .step.is-active .step-no { background: var(--ink); color: #fff; }
 .step.is-done { background: var(--green-bg); border-color: #D5E3D3; }
@@ -658,6 +661,17 @@ function stepNeeds(flow, i) {
   return (i > 0 && flow.steps[i - 1].state === 'active') ? flow.handoff_hold_s : flow.start_hold_s;
 }
 
+// An order that has just finished stays on screen for ten minutes, so "moved to completed" is actually seen.
+function recentlyCompleted(st) {
+  const lc = st && st.last_completed;
+  return lc && (Date.now() / 1000 - lc.ts) < 600 ? lc : null;
+}
+function completedFlow(lc) {
+  return {steps: lc.steps.map(x => ({name: x.name, activity: x.activity, state: 'finished'})), held_s: {}, finishing_in_s: null,
+          quiet_s: 0, held: false, start_hold_s: 2, handoff_hold_s: 3, finish_wait_s: 15};
+}
+const completedText = lc => esc(lc.name) + ' completed at ' + fmtTime(lc.ts) + (lc.by_camera ? ' automatically by the camera.' : ' in Odoo.');
+
 function renderChipAndJob(st) {
   if (!st) {
     setChip('#chip-odoo', 'bad', 'Odoo status unavailable');
@@ -678,9 +692,14 @@ function renderChipAndJob(st) {
     const rows = st.flow.steps.map(s => {
       const state = s.state === 'finished' ? 'is-done' : s.state === 'active' ? 'is-active' : 'is-waiting';
       return '<li class="' + state + '"><span class="mark">' + (s.state === 'finished' ? CHECK : '') + '</span><span class="name">' + esc(s.name) + '</span>' +
-        '<span class="badge ' + STEP_STATE[s.state][0] + '">' + STEP_STATE[s.state][1] + '</span></li>';
+        '<span class="badge ' + STEP_STATE[s.state][0] + '">' + (s.state === 'active' && st.flow.finishing_in_s != null && s === st.flow.steps[st.flow.steps.length - 1] ? 'Completes in ' + Math.max(0, Math.ceil(st.flow.finishing_in_s)) + ' s' : STEP_STATE[s.state][1]) + '</span></li>';
     }).join('');
     body.innerHTML = '<div class="job-order">' + esc(st.production.name) + '</div><div class="job-meta">Work center ' + esc(st.workcenter_code) + '</div><ol class="mini-steps">' + rows + '</ol>';
+  } else if (recentlyCompleted(st)) {
+    const lc = recentlyCompleted(st);
+    const rows = lc.steps.map(x => '<li class="is-done"><span class="mark">' + CHECK + '</span><span class="name">' + esc(x.name) + '</span><span class="badge b-green">Finished</span></li>').join('');
+    body.innerHTML = '<div class="job-order">' + esc(lc.name) + '</div><div class="job-meta">Completed at ' + fmtTime(lc.ts) + (lc.by_camera ? ', automatically' : '') + '</div><ol class="mini-steps">' + rows + '</ol>';
+    badge.className = 'badge b-green'; badge.textContent = 'Completed';
   } else {
     body.innerHTML = '<div class="empty compact"><strong>No order running</strong>' + (st.configured ? 'Start an order in Odoo and it appears here.' : 'Odoo is not set up yet.') + '</div>';
   }
@@ -707,35 +726,44 @@ function renderOdooTab(st, audit) {
 
   // operations flow
   const flowHost = $('#od-flow');
-  $('#od-order-sub').textContent = st.production ? st.production.name : '';
-  if (!st.flow) {
+  const lcDone = !st.flow ? recentlyCompleted(st) : null;
+  const flowView = st.flow || (lcDone ? completedFlow(lcDone) : null);
+  $('#od-order-sub').textContent = st.production ? st.production.name : (lcDone ? lcDone.name : '');
+  if (!flowView) {
     flowHost.innerHTML = '<div class="empty"><strong>' + (st.conflict ? 'Paused' : 'No order is being followed') + '</strong>' +
       (st.conflict ? 'Fix the message above and the camera resumes by itself.' : 'Create an order in Odoo, then press Confirm and Start. It appears here within a few seconds.') + '</div>';
   } else {
-    const f = st.flow, held = f.held_s || {};
+    const f = flowView, held = f.held_s || {};
     const cards = f.steps.map((s, i) => {
       const cls = s.state === 'finished' ? 'is-done' : s.state === 'active' ? 'is-active' : 'is-waiting';
-      let note = '', pct = 0, showMeter = false;
+      let note = '', pct = 0, showMeter = false, countdown = '';
       if (s.state === 'pending') {
         const need = stepNeeds(f, i), h = held[s.activity] || 0;
         if (h > 0) { note = 'Camera sees ' + stageLabel(s.activity).toLowerCase() + ' for ' + h.toFixed(1) + ' s of ' + need + ' s'; pct = Math.min(1, h / need); showMeter = true; }
         else note = 'Waiting for the camera to see ' + stageLabel(s.activity).toLowerCase();
       } else if (s.state === 'active') {
-        const last = i === f.steps.length - 1;
-        if (last && f.finishing_in_s != null) {
-          note = 'Finishing in ' + Math.ceil(f.finishing_in_s) + ' s unless work continues';
-          pct = (f.quiet_s + f.finishing_in_s) > 0 ? f.quiet_s / (f.quiet_s + f.finishing_in_s) : 0; showMeter = true;
-        } else note = last ? 'Running. Closes after a quiet period.' : 'Running. The next step takes over when the camera sees it.';
+        const last = i === f.steps.length - 1, wait = f.finish_wait_s || 15;
+        if (last && f.held) {
+          note = 'Auto-finish is on hold. Release the hold to let it complete.';
+        } else if (last && f.finishing_in_s != null) {
+          const left = Math.max(0, Math.ceil(f.finishing_in_s));
+          countdown = '<div class="count" role="timer" aria-label="Seconds until ' + esc(s.name) + ' completes"><span class="count-num num">' + left + '</span><span class="count-label">s until ' + esc(s.name) + ' completes</span></div>';
+          note = 'The worker is idle or away. Work starting again cancels this.';
+          pct = wait > 0 ? Math.min(1, f.quiet_s / wait) : 0; showMeter = true;
+        } else if (last) {
+          note = 'Work in progress. When it stops, a ' + wait + ' s countdown starts and the operation completes.';
+        } else note = 'Running. The next step takes over when the camera sees it.';
       } else note = 'Done in Odoo';
       const stt = STEP_STATE[s.state];
       return '<li class="step ' + cls + '"><div class="step-top"><span class="step-no">' + (i + 1) + '</span><span class="badge ' + stt[0] + '">' + stt[1] + '</span></div>' +
-        '<h3>' + esc(s.name) + '</h3><p>Recognised from ' + esc(stageLabel(s.activity).toLowerCase()) + ' activity</p>' +
+        '<h3>' + esc(s.name) + '</h3><p>Recognised from ' + esc(stageLabel(s.activity).toLowerCase()) + ' activity</p>' + countdown +
         '<div class="meter" aria-hidden="true"' + (showMeter ? '' : ' style="visibility:hidden"') + '><i style="transform:scaleX(' + pct + ')"></i></div><div class="note">' + esc(note) + '</div></li>';
     });
     const allDone = f.steps.every(s => s.state === 'finished');
     cards.push('<li class="step ' + (allDone ? 'is-done' : 'is-waiting') + '"><div class="step-top"><span class="step-no">' + (f.steps.length + 1) + '</span><span class="badge ' + (allDone ? 'b-green' : 'b-gray') + '">' + (allDone ? 'Done' : 'Waiting') + '</span></div>' +
       '<h3>Order done</h3><p>Closed automatically after the last step</p><div class="meter" aria-hidden="true"><i style="transform:scaleX(' + (allDone ? 1 : 0) + ')"></i></div><div class="note">' + (allDone ? 'The order is complete in Odoo' : 'After the last step finishes') + '</div></li>');
-    flowHost.innerHTML = '<ol class="flow">' + cards.join('') + '</ol>';
+    flowHost.innerHTML = (lcDone ? '<div class="banner ok" style="margin-bottom:16px"><span class="dot"></span><span>' + completedText(lcDone) + '</span></div>' : '') +
+      '<ol class="flow">' + cards.join('') + '</ol>';
   }
 
   // what the camera sees
@@ -754,8 +782,8 @@ function renderOdooTab(st, audit) {
   const fin = $('#od-finish');
   if (st.flow && st.flow.finishing_in_s != null) {
     const total = st.flow.quiet_s + st.flow.finishing_in_s;
-    fin.innerHTML = '<div class="finish-line"><div class="muted">Finishing the last operation in</div><div class="big num">' + Math.ceil(st.flow.finishing_in_s) +
-      ' s</div><div class="meter" aria-hidden="true"><i style="transform:scaleX(' + (total > 0 ? st.flow.quiet_s / total : 0) + ')"></i></div><div class="help">Starting the work again cancels this.</div></div>';
+    fin.innerHTML = '<div class="finish-line"><div class="muted">Last operation completes in</div><div class="big num">' + Math.ceil(st.flow.finishing_in_s) +
+      ' s</div><div class="meter" aria-hidden="true"><i style="transform:scaleX(' + (total > 0 ? st.flow.quiet_s / total : 0) + ')"></i></div><div class="help">Starting the work again cancels the countdown.</div></div>';
   } else if (st.flow && st.flow.held) {
     fin.innerHTML = '<div class="banner info"><span class="dot"></span><span>Auto-finish is on hold. Nothing closes until you release it.</span></div>';
   } else fin.innerHTML = '';

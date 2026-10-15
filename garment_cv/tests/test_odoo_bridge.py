@@ -134,7 +134,7 @@ FLOW = FlowConfig(start_hold_s=2, handoff_hold_s=3, min_active_s=10, quiet_s=45,
 
 
 class Rig:
-    def __init__(self, mode="live", db_path=None, fake=None, ops=("Marking", "Cutting")):
+    def __init__(self, mode="live", db_path=None, fake=None, ops=("Marking", "Cutting"), flow=None):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = db_path or Path(self.tmp.name) / "t.db"
         self.fake = fake or FakeOdoo()
@@ -142,7 +142,7 @@ class Rig:
         self.cam_t = 1000.0
         self.db = Database(self.db_path)
         self.cfg = BridgeConfig(mode=mode, url="http://odoo.test", db="d", api_key="k", workcenter_code="cam1",
-                                operation_map=parse_operation_map("Marking=MARKING,Cutting=CUTTING"), flow=FLOW)
+                                operation_map=parse_operation_map("Marking=MARKING,Cutting=CUTTING"), flow=flow or FLOW)
         self.bridge = self.make_bridge()
         self.mo = self.fake.add_mo("WH/MO/1", list(ops)) if ops else None
 
@@ -266,6 +266,45 @@ class DecisionsAreSentAtOnce(unittest.TestCase):
         r.bridge._wake.clear()
         r.seconds(4, MARK)                                      # the bridge decides to start Marking
         self.assertTrue(r.bridge._wake.is_set())
+        r.close()
+
+
+class ClosesWhenTheWorkerLeaves(unittest.TestCase):
+    """The reported case: Marking, a short cut (9 s after the hand-off), then the worker leaves the zone.
+    With the default settings the order must be Done in Odoo shortly after 15 s of no cutting."""
+
+    def test_default_settings_close_the_order_after_fifteen_seconds_away(self):
+        r = Rig(flow=FlowConfig())
+        r.bridge.poll_once()
+        r.seconds(5, MARK)
+        r.seconds(3.5, CUT)
+        r.seconds(9, CUT)
+        self.assertEqual(r.fake.state(r.mo), ["done", "progress"])
+        r.seconds(12, NONE)
+        self.assertEqual(r.fake.state(r.mo), ["done", "progress"])        # 12 s: still within the wait
+        r.seconds(6, NONE)                                                   # past 15 s
+        self.assertEqual(r.fake.state(r.mo), ["done", "done"])
+        self.assertEqual(r.fake.mos[r.mo]["state"], "done")
+        r.close()
+
+    def test_a_completed_order_is_remembered_for_the_dashboard(self):
+        r = Rig(flow=FlowConfig())
+        r.bridge.poll_once()
+        r.seconds(5, MARK); r.seconds(12, CUT); r.seconds(20, NONE)
+        r.bridge.poll_once(); r.bridge.poll_once()
+        lc = r.bridge.status()["last_completed"]
+        self.assertEqual(lc["name"], "WH/MO/1")
+        self.assertTrue(lc["by_camera"])
+        self.assertEqual([x["name"] for x in lc["steps"]], ["Marking", "Cutting"])
+        r.close()
+
+    def test_a_cancelled_order_is_not_reported_as_completed(self):
+        r = Rig(flow=FlowConfig())
+        r.bridge.poll_once()
+        r.seconds(5, MARK)
+        r.fake.mos[r.mo]["state"] = "cancel"
+        r.bridge.poll_once(); r.bridge.poll_once()
+        self.assertIsNone(r.bridge.status()["last_completed"])
         r.close()
 
 

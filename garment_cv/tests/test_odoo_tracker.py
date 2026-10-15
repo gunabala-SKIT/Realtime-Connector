@@ -185,6 +185,54 @@ class DefaultFinishWait(unittest.TestCase):
         self.assertLessEqual(tr.finishing_in_s(), 15.0)
 
 
+class ShortJobsStillClose(unittest.TestCase):
+    """Regression: on a real job the bridge saw 9.0 s of cutting after the hand-off, then the worker left
+    the zone. The old rule wanted 10 s of cutting before it could ever finish, so 408 s of quiet changed
+    nothing and the order stayed In Progress. Cutting that was enough to hand over from Marking is
+    enough to close the job."""
+
+    def test_nine_seconds_of_cutting_then_leaving_closes_after_fifteen_seconds(self):
+        tr = OperationTracker(STEPS)                        # defaults
+        f = Feed(tr)
+        f.run(5, MARK).run(3.5, CUT).run(9, CUT)            # hand-off, then 9 s more of cutting
+        self.assertEqual(tr.states, [FINISHED, ACTIVE])
+        f.run(14, NONE)
+        self.assertNotIn(("FINISH", 1), f.kinds())
+        f.run(2, NONE)
+        self.assertEqual(f.kinds()[-1], ("FINISH", 1))
+
+    def test_the_cutting_that_triggered_the_hand_off_counts_as_work_seen(self):
+        tr = OperationTracker(STEPS)
+        f = Feed(tr)
+        f.run(5, MARK).run(3.5, CUT)                        # hand-off happens, almost no cutting after it
+        self.assertEqual(tr.states, [FINISHED, ACTIVE])
+        self.assertGreaterEqual(tr.status()["active_s"], 3.0)
+        f.run(16, NONE)
+        self.assertEqual(f.kinds()[-1], ("FINISH", 1))
+
+    def test_leaving_the_frame_entirely_is_the_same_as_idling(self):
+        tr = OperationTracker(STEPS)
+        f = Feed(tr)
+        f.run(5, MARK).run(8, CUT)
+        f.run(16, frozenset())                              # nobody in view at all
+        self.assertEqual(f.kinds()[-1], ("FINISH", 1))
+
+    def test_a_step_started_by_hand_that_the_camera_never_saw_work_on_is_not_auto_closed(self):
+        tr = OperationTracker(STEPS)
+        tr.sync_states([FINISHED, ACTIVE])                  # a supervisor pressed Start Cutting in Odoo
+        f = Feed(tr)
+        f.run(300, NONE)
+        self.assertNotIn(("FINISH", 1), f.kinds())
+        self.assertIsNone(tr.finishing_in_s())
+
+    def test_the_status_carries_the_wait_so_the_screen_can_show_the_timeout(self):
+        tr = OperationTracker(STEPS)
+        self.assertEqual(tr.status()["finish_wait_s"], 15.0)
+        f = Feed(tr)
+        f.run(5, MARK).run(8, CUT).run(5, NONE)
+        self.assertAlmostEqual(tr.status()["finishing_in_s"], 10.0, delta=1.0)
+
+
 class SyncWithOdoo(unittest.TestCase):
     def test_sync_adopts_odoo_state_and_resets_evidence(self):
         tr, f = make()
