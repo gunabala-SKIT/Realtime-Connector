@@ -170,7 +170,8 @@ def _pad(box, p: int = 20):
 # boxes being model-drafted is a real caveat: they inherit that model's habits, which the check only
 # partly catches.
 NEW_FRAMING_FOLDERS = ("cutting_new_framing", "scissors_on_cloth_new_framing", "scraps_orange",
-                       "fabric_yellow", "scissors_yellow", "pen_yellow", "pen_checked", "cutting_closeup")
+                       "fabric_yellow", "scissors_yellow", "pen_yellow", "pen_checked", "cutting_closeup",
+                       "marking_in_hand_1", "marking_in_hand_2", "marking_in_hand_3_yellow", "marking_then_cutting_4")
 _NEW_FRAMING = None
 
 

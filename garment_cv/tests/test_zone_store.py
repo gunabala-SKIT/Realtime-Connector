@@ -101,6 +101,22 @@ class Validation(unittest.TestCase):
             s.update_zone(999, name="X")
 
 
+class MultipleActivities(unittest.TestCase):
+    def test_a_zone_can_allow_several_activities_stored_in_a_canonical_order(self):
+        s = new_store()
+        self.assertEqual(s.add_zone("c", "Table", SQUARE, activity="cutting, Marking").activity, "marking,cutting")
+        self.assertEqual(s.add_zone("c", "T2", SQUARE, activity="marking,cutting").activity, "marking,cutting")
+
+    def test_one_bad_item_is_rejected(self):
+        with self.assertRaises(ZoneError):
+            new_store().add_zone("c", "T", SQUARE, activity="cutting,juggling")
+
+    def test_single_and_empty_values_still_work(self):
+        s = new_store()
+        self.assertEqual(s.add_zone("c", "A", SQUARE, activity="cutting").activity, "cutting")
+        self.assertIsNone(s.add_zone("c", "B", SQUARE, activity=" , ").activity)
+
+
 class Persistence(unittest.TestCase):
     def test_zones_survive_a_restart(self):
         path = os.path.join(tempfile.mkdtemp(), "zones.json")

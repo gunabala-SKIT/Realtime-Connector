@@ -39,12 +39,19 @@ class Zone:
 
 
 def validate_activity(activity) -> str | None:
+    """One activity ("cutting") or several for a zone where more than one kind of work happens at the
+    same table ("marking,cutting" - the engine then lets either rule fire there). Stored as a
+    comma-separated string in a fixed order, so equal sets always compare equal."""
     if activity in (None, ""):
         return None
-    a = str(activity).strip().lower()
-    if a not in ZONE_ACTIVITIES:
-        raise ZoneError(f"activity must be one of {', '.join(ZONE_ACTIVITIES)}, or left unset")
-    return a
+    parts = [p.strip().lower() for p in str(activity).split(",") if p.strip()]
+    if not parts:
+        return None
+    for a in parts:
+        if a not in ZONE_ACTIVITIES:
+            raise ZoneError(f"activity must be one or more of {', '.join(ZONE_ACTIVITIES)} "
+                            f"(comma-separated), or left unset")
+    return ",".join(a for a in ZONE_ACTIVITIES if a in parts)
 
 
 def validate_points(points) -> list[list[float]]:

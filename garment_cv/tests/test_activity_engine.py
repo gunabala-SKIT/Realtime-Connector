@@ -447,5 +447,54 @@ class Status(unittest.TestCase):
         self.assertEqual(cur[1]["zone"], "Cutting Zone")
 
 
+class TickCallback(unittest.TestCase):
+    """The Odoo bridge's feed: a per-update set of what is confirmed anywhere in view, independent
+    of person track ids."""
+
+    def test_tick_reports_confirmed_activities_not_idle_and_every_update(self):
+        ticks = []
+        engine = ActivityEngine(cfg(), on_tick=lambda cam, ts, acts: ticks.append((ts, acts)))
+        boxes = moving_scissors_boxes(n=12)
+        for i, b in enumerate(boxes):
+            engine.update("cam", [person(1), scissors(b)], ts=i * 0.5, frame_w=1000, frame_h=1000)
+        self.assertEqual(len(ticks), len(boxes))                 # one tick per update
+        self.assertEqual(ticks[0][1], frozenset())               # nothing confirmed yet
+        self.assertIn(frozenset({"CUTTING"}), [a for _, a in ticks])
+        self.assertTrue(all("IDLE" not in a for _, a in ticks))
+
+    def test_tick_fires_even_when_nobody_is_in_view(self):
+        ticks = []
+        engine = ActivityEngine(cfg(), on_tick=lambda cam, ts, acts: ticks.append(acts))
+        engine.update("cam", [], ts=1.0, frame_w=1000, frame_h=1000)
+        self.assertEqual(ticks, [frozenset()])
+
+
+class SharedZone(unittest.TestCase):
+    """One table where both marking and cutting happen: the zone lists both activities."""
+
+    def run_scene(self, zone_activity, tool_cls):
+        engine = ActivityEngine(cfg(marking_min_s=3.0, require_cloth_contact=False))
+        boxes = moving_scissors_boxes(n=16)
+        confirmed = set()
+        for i, b in enumerate(boxes):
+            d = FakeDet(tool_cls, b)
+            acts = engine.update("cam", [person(1, zone="Table", zone_activity=zone_activity), d],
+                                 ts=i * 0.5, frame_w=1000, frame_h=1000)
+            confirmed.add(acts.get(1))
+        return confirmed
+
+    def test_marking_fires_in_a_marking_and_cutting_zone(self):
+        self.assertIn("MARKING", self.run_scene("marking,cutting", "marking_tool"))
+
+    def test_cutting_still_fires_there_too(self):
+        self.assertIn("CUTTING", self.run_scene("marking,cutting", "scissors"))
+
+    def test_a_cutting_only_zone_still_never_marks(self):
+        self.assertNotIn("MARKING", self.run_scene("cutting", "marking_tool"))
+
+    def test_zone_with_no_activity_never_matches(self):
+        self.assertEqual(self.run_scene(None, "marking_tool") - {None}, set())
+
+
 if __name__ == "__main__":
     unittest.main()
