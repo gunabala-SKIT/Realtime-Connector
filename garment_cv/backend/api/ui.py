@@ -1,4 +1,4 @@
-"""The shared look of every Garment CV page (dashboard, status page, zone editor).
+"""The shared look of every SKIT AI Vision page (dashboard, status page, zone editor).
 
 One small design system so the three pages read as one product:
 
@@ -19,7 +19,7 @@ import re
 
 FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E"
            "%3Crect width='32' height='32' rx='8' fill='%23111111'/%3E"
-           "%3Cpath d='M10 22V10h12M10 16h8' fill='none' stroke='%23ffffff' stroke-width='3' "
+           "%3Cpath d='M22 10H14a4 4 0 0 0 0 6h4a4 4 0 0 1 0 6H10' fill='none' stroke='%23ffffff' stroke-width='3' "
            "stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
 
 BASE_CSS = """

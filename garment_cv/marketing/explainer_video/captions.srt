@@ -1,0 +1,36 @@
+1
+00:00:00,450 --> 00:00:05,519
+In a garment unit, hundreds of operations happen every single day.
+
+2
+00:00:06,519 --> 00:00:13,878
+But on the shop floor, most are written on paper, entered late, or never entered at all.
+
+3
+00:00:14,878 --> 00:00:25,022
+So Odoo tells one story and the floor tells another. Supervisors can't see what is running now, and idle time stays hidden.
+
+4
+00:00:26,022 --> 00:00:32,546
+Meet SKIT AI Vision. It connects your existing camera to Odoo Manufacturing.
+
+5
+00:00:33,546 --> 00:00:44,030
+The camera watches the work area. The AI recognises the worker, the fabric and the tools in their hands.
+
+6
+00:00:45,030 --> 00:00:55,059
+When marking begins, the Marking operation starts in Odoo. When the scissors come out, Marking closes and Cutting starts.
+
+7
+00:00:56,059 --> 00:01:01,458
+When the work stops for fifteen seconds, the order completes itself.
+
+8
+00:01:02,458 --> 00:01:10,548
+No manual entry. A live view of production. A clear picture of where the time goes.
+
+9
+00:01:11,548 --> 00:01:16,777
+SKIT AI Vision. Your camera, connected to Odoo.
+

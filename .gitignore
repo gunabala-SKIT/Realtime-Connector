@@ -77,4 +77,11 @@ garment_cv/tests/_*.mp4
 # regenerate (`make_synthetic_dataset.py` then `train_synthetic.py`, seconds not hours), unlike
 # phase14_ppe's real trained model below - so neither is tracked here.
 garment_cv/training/datasets/
-garment_cv/models/
+garment_cv/models/*
+# ...except the trained live-demo model (marking/cutting/pen). It cannot be auto-downloaded and retraining
+# takes hours plus hand-labelled data, so - like phase14_ppe/models/ppe.pt - it IS tracked (5.5 MB).
+!garment_cv/models/live_demo.pt
+
+# Marketing videos: scripts are tracked, rendered videos/stock footage are not (see garment_cv/marketing/README.md).
+# The company logo the video scripts load is small and needed, so it is tracked.
+!garment_cv/marketing/explainer_video/srikesh_logo.png

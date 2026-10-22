@@ -1,0 +1,11 @@
+[
+ {"id":"s1","show":"In a garment unit, hundreds of operations happen every single day.","say":"In a garment unit, hundreds of operations happen every single day."},
+ {"id":"s2","show":"But on the shop floor, most are written on paper, entered late, or never entered at all.","say":"But on the shop floor, most of them are written on paper, entered late, or never entered at all."},
+ {"id":"s3","show":"So Odoo tells one story and the floor tells another. Supervisors can't see what is running now, and idle time stays hidden.","say":"So Oodoo tells one story, and the floor tells another. Supervisors can't see what is running right now, and idle time stays hidden."},
+ {"id":"s4","show":"Meet SKIT AI Vision. It connects your existing camera to Odoo Manufacturing.","say":"Meet Skit A I Vision. It connects your existing camera to Oodoo Manufacturing."},
+ {"id":"s5","show":"The camera watches the work area. The AI recognises the worker, the fabric and the tools in their hands.","say":"Here is how it works. The camera watches the work area. The A I recognises the worker, the fabric, and the tools in their hands."},
+ {"id":"s6","show":"When marking begins, the Marking operation starts in Odoo. When the scissors come out, Marking closes and Cutting starts.","say":"When marking begins, the Marking operation starts in Oodoo. When the scissors come out, Marking closes, and Cutting starts."},
+ {"id":"s7","show":"When the work stops for fifteen seconds, the order completes itself.","say":"When the work stops for fifteen seconds, the order completes itself."},
+ {"id":"s8","show":"No manual entry. A live view of production. A clear picture of where the time goes.","say":"No manual entry. A live view of production. And a clear picture of where the time goes."},
+ {"id":"s9","show":"SKIT AI Vision. Your camera, connected to Odoo.","say":"Skit A I Vision. Your camera, connected to Oodoo."}
+]

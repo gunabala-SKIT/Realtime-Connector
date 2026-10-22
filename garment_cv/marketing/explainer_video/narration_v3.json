@@ -1,0 +1,148 @@
+[
+ {
+  "id": "intro",
+  "dur": 8.6,
+  "show": ""
+ },
+ {
+  "id": "s1",
+  "parts": [
+   {
+    "show": "Do you really know what is running on your production floor, right now?",
+    "say": "Do you really know what is running on your production floor, right now?"
+   }
+  ]
+ },
+ {
+  "id": "s2",
+  "parts": [
+   {
+    "show": "In most garment units, each operation is written on paper,",
+    "say": "In most garment units, each operation is written on paper,"
+   },
+   {
+    "show": "or typed into Odoo hours later by a supervisor.",
+    "say": "or typed into Oodoo hours later by a supervisor."
+   },
+   {
+    "show": "Entries come late, wrong, or not at all.",
+    "say": "Entries come late, wrong, or not at all."
+   }
+  ]
+ },
+ {
+  "id": "s3",
+  "parts": [
+   {
+    "show": "So Odoo shows old status.",
+    "say": "So Oodoo shows old status."
+   },
+   {
+    "show": "Managers walk the floor just to ask where an order is.",
+    "say": "Managers walk the floor just to ask where an order is."
+   },
+   {
+    "show": "And nobody knows how long each operation takes, or how much time is lost to idle.",
+    "say": "And nobody knows how long each operation takes, or how much time is lost to idle."
+   }
+  ]
+ },
+ {
+  "id": "s4",
+  "parts": [
+   {
+    "show": "Meet SKIT AI Vision.",
+    "say": "Meet Skit A I Vision."
+   },
+   {
+    "show": "It watches your work stations through your existing cameras, and updates Odoo Manufacturing by itself.",
+    "say": "It watches your work stations through your existing cameras, and updates Oodoo Manufacturing by itself."
+   }
+  ]
+ },
+ {
+  "id": "s5",
+  "parts": [
+   {
+    "show": "A camera over each work station sees the worker, the fabric, and the tools in their hands.",
+    "say": "A camera over each work station sees the worker, the fabric, and the tools in their hands."
+   },
+   {
+    "show": "The AI knows which operation is happening.",
+    "say": "The A I knows which operation is happening."
+   },
+   {
+    "show": "Simple rules decide when it starts, and when it ends.",
+    "say": "Simple rules decide when it starts, and when it ends."
+   },
+   {
+    "show": "Then Odoo is updated, automatically.",
+    "say": "Then Oodoo is updated, automatically."
+   }
+  ]
+ },
+ {
+  "id": "s6",
+  "parts": [
+   {
+    "show": "Start an order in Odoo.",
+    "say": "Start an order in Oodoo."
+   },
+   {
+    "show": "As the work moves from marking to cutting, stitching, pressing, quality check, and packing,",
+    "say": "As the work moves from marking to cutting, stitching, pressing, quality check, and packing,"
+   },
+   {
+    "show": "each work order starts and finishes by itself, with real start and end times.",
+    "say": "each work order starts and finishes by itself, with real start and end times."
+   }
+  ]
+ },
+ {
+  "id": "s7",
+  "parts": [
+   {
+    "show": "When the last operation is done,",
+    "say": "When the last operation is done,"
+   },
+   {
+    "show": "the manufacturing order is marked as done automatically,",
+    "say": "the manufacturing order is marked as done automatically,"
+   },
+   {
+    "show": "so stock is updated and nobody has to click.",
+    "say": "so stock is updated and nobody has to click."
+   }
+  ]
+ },
+ {
+  "id": "s8",
+  "parts": [
+   {
+    "show": "The result: no manual entry.",
+    "say": "The result: no manual entry."
+   },
+   {
+    "show": "A live view of every order and every operation.",
+    "say": "A live view of every order and every operation."
+   },
+   {
+    "show": "Real operation times and idle time, to plan and improve with facts.",
+    "say": "Real operation times and idle time, to plan and improve with facts."
+   }
+  ]
+ },
+ {
+  "id": "s9",
+  "parts": [
+   {
+    "show": "SKIT AI Vision, by Srikesh Infotech.",
+    "say": "Skit A I Vision, by Srikesh Infotech."
+   },
+   {
+    "show": "Your camera, connected to Odoo.",
+    "say": "Your camera, connected to Oodoo."
+   }
+  ]
+ }
+]

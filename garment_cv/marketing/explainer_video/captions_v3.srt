@@ -1,0 +1,36 @@
+1
+00:00:09,049 --> 00:00:12,654
+What if your camera could run your production floor?
+
+2
+00:00:13,654 --> 00:00:20,408
+Today, every operation is written on paper, entered late, or never entered at all.
+
+3
+00:00:21,408 --> 00:00:27,737
+So Odoo shows one story, the floor lives another, and idle time stays hidden.
+
+4
+00:00:28,737 --> 00:00:37,011
+Meet SKIT AI Vision. It turns your existing camera into a live production tracker for Odoo Manufacturing.
+
+5
+00:00:38,011 --> 00:00:49,465
+The camera watches the work area. The AI recognises the worker, the fabric and the tools in their hands. Rules decide which operation is running.
+
+6
+00:00:50,465 --> 00:01:07,244
+Start an order in Odoo and the camera follows it, station by station. Marking, cutting, stitching, pressing, quality check and packing. Each operation starts and finishes by itself.
+
+7
+00:01:08,244 --> 00:01:15,233
+When the last operation is done, the manufacturing order is marked as done automatically.
+
+8
+00:01:16,233 --> 00:01:24,597
+No manual entry. A live view of every operation. A clear picture of where the time goes.
+
+9
+00:01:25,597 --> 00:01:30,826
+SKIT AI Vision. Your camera, connected to Odoo.
+

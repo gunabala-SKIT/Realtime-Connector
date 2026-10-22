@@ -1,0 +1,92 @@
+[
+ {
+  "id": "p1",
+  "lead": 1.8,
+  "parts": [
+   {
+    "show": "Shelves empty faster than stock records can keep up.",
+    "say": "Shelves empty faster than stock records can keep up.",
+    "pad": 0.0
+   },
+   {
+    "show": "Counts are done by hand, Odoo is updated late, and low stock is noticed only when it is already gone.",
+    "say": "Counts are done by hand, Oodoo is updated late, and low stock is noticed only when it is already gone.",
+    "pad": 1.0
+   }
+  ]
+ },
+ {
+  "id": "i",
+  "lead": 0.5,
+  "parts": [
+   {
+    "show": "The camera doesn't just detect low stock.",
+    "say": "The camera doesn't just detect low stock.",
+    "pad": 0.9
+   }
+  ]
+ },
+ {
+  "id": "core",
+  "lead": 1.0,
+  "parts": [
+   {
+    "show": "It continuously monitors shelf quantities,",
+    "say": "It continuously monitors shelf quantities,",
+    "pad": 2.2
+   },
+   {
+    "show": "synchronizes inventory with Odoo,",
+    "say": "synchronizes inventory with Oodoo,",
+    "pad": 3.6
+   },
+   {
+    "show": "and alerts the team when replenishment is required.",
+    "say": "and alerts the team when replenishment is required.",
+    "pad": 2.0
+   }
+  ]
+ },
+ {
+  "id": "b",
+  "lead": 0.45,
+  "parts": [
+   {
+    "show": "Live shelf counts.",
+    "say": "Live shelf counts.",
+    "pad": 0.0
+   },
+   {
+    "show": "Inventory that is always in sync.",
+    "say": "Inventory that is always in sync.",
+    "pad": 0.0
+   },
+   {
+    "show": "And replenishment, before the shelf runs empty.",
+    "say": "And replenishment, before the shelf runs empty.",
+    "pad": 1.0
+   }
+  ]
+ },
+ {
+  "id": "r",
+  "lead": 3.0,
+  "parts": [
+   {
+    "show": "SKIT AI Vision.",
+    "say": "Skit A I Vision.",
+    "pad": 0.0
+   },
+   {
+    "show": "By Srikesh Infotech.",
+    "say": "By Srikesh Infotech.",
+    "pad": 0.0
+   },
+   {
+    "show": "Every shelf. Always in sync.",
+    "say": "Every shelf. Always in sync.",
+    "pad": 3.0
+   }
+  ]
+ }
+]

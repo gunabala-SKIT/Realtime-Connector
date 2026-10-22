@@ -92,7 +92,7 @@ _TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Garment CV - __CAMERA_NAME__</title>
+<title>SKIT AI Vision - __CAMERA_NAME__</title>
 <meta name="description" content="Live production monitoring: what the camera sees at the work table and how Odoo work orders follow it.">
 <meta name="theme-color" content="#F7F6F3">
 <link rel="icon" href="__FAVICON__">
@@ -106,8 +106,8 @@ __PAGE_CSS__
 <div class="shell">
   <header class="top">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M10 22V10h12M10 16h8"/></svg></div>
-      <div><h1>Garment CV</h1><div class="where">__CAMERA_NAME__</div></div>
+      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10H14a4 4 0 0 0 0 6h4a4 4 0 0 1 0 6H10"/></svg></div>
+      <div><h1>SKIT AI Vision</h1><div class="where">__CAMERA_NAME__</div></div>
     </div>
     <div class="chips" aria-live="polite">
       <span class="chip" id="chip-camera"><span class="dot"></span><span>Checking camera</span></span>

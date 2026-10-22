@@ -25,7 +25,7 @@ __EXTRA_CSS__
 <div class="shell">
   <header class="top">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M10 22V10h12M10 16h8"/></svg></div>
+      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10H14a4 4 0 0 0 0 6h4a4 4 0 0 1 0 6H10"/></svg></div>
       <div><h1>__HEADING__</h1><div class="where">__CAMERA_NAME__</div></div>
     </div>
     <nav class="chips" aria-label="Pages">__NAV__</nav>

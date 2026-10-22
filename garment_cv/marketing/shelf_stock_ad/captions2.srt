@@ -1,0 +1,48 @@
+1
+00:00:01,800 --> 00:00:06,024
+Shelves empty faster than stock records can keep up.
+
+2
+00:00:06,244 --> 00:00:13,612
+Counts are done by hand, Odoo is updated late, and low stock is noticed only when it is already gone.
+
+3
+00:00:15,662 --> 00:00:19,214
+The camera doesn't just detect low stock.
+
+4
+00:00:21,664 --> 00:00:25,432
+It continuously monitors shelf quantities,
+
+5
+00:00:27,852 --> 00:00:31,068
+synchronizes inventory with Odoo,
+
+6
+00:00:34,888 --> 00:00:38,872
+and alerts the team when replenishment is required.
+
+7
+00:00:41,872 --> 00:00:44,368
+Live shelf counts.
+
+8
+00:00:44,588 --> 00:00:47,852
+Inventory that is always in sync.
+
+9
+00:00:48,072 --> 00:00:52,056
+And replenishment, before the shelf runs empty.
+
+10
+00:00:56,606 --> 00:00:59,078
+SKIT AI Vision.
+
+11
+00:00:59,298 --> 00:01:01,866
+By Srikesh Infotech.
+
+12
+00:01:02,086 --> 00:01:06,382
+Every shelf. Always in sync.
+
